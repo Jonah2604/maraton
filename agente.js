@@ -492,11 +492,13 @@
       var r = Agente.aplicarHash();
       if (r && r.ok) { Agente._hashAplicado = r; }
     } catch (e) {}
+    // Si la interfaz ya esta montada, que se repinte con lo que acaba de entrar.
+    if (typeof global.__refrescar === 'function') { try { global.__refrescar(); } catch (e) {} }
     try {
       global.addEventListener('hashchange', function () {
         try {
           var r2 = Agente.aplicarHash();
-          if (r2 && r2.ok && global.document && global.document.dispatchEvent && typeof CustomEvent === 'function') {
+          if (r2 && r2.ok && global.document && typeof CustomEvent === 'function') {
             global.document.dispatchEvent(new CustomEvent('agente:cambio'));
           }
         } catch (x) {}
