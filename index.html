@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<title>Maratón · plan de entrenamiento</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root{
+    --fondo:#0b0f14; --panel:#131a22; --panel2:#1a232d; --linea:#243040;
+    --texto:#e8eef6; --tenue:#8a9aae; --acento:#ff7a45; --azul:#4cc9f0; --ok:#3ddc97; --mal:#ff5d5d;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+  body{
+    margin:0 auto; max-width:680px; width:100%; min-height:100vh;
+    background:var(--fondo); color:var(--texto);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    padding:0 0 calc(84px + env(safe-area-inset-bottom)); font-size:15px; line-height:1.45;
+    overflow-x:hidden;
+  }
+  header{
+    position:sticky; top:0; z-index:20; background:rgba(11,15,20,.94);
+    backdrop-filter:blur(10px); border-bottom:1px solid var(--linea);
+    padding:calc(10px + env(safe-area-inset-top)) 14px 10px;
+  }
+  .marca{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;letter-spacing:.4px}
+  .marca span{color:var(--acento)}
+  .atletas{display:flex;gap:8px;margin-top:9px}
+  .atletas button{
+    flex:1; padding:9px 10px; border-radius:11px; border:1px solid var(--linea);
+    background:var(--panel); color:var(--tenue); font-size:14px; font-weight:600;
+    font-family:inherit; cursor:pointer; transition:.15s;
+  }
+  .atletas button.on{background:var(--acento);border-color:var(--acento);color:#151006}
+  main{padding:14px}
+  .card{background:var(--panel);border:1px solid var(--linea);border-radius:16px;padding:14px;margin-bottom:12px}
+  .fila{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:1.4px;color:var(--tenue);margin:0 0 10px;font-weight:700}
+  .sem{font-size:34px;font-weight:800;line-height:1}
+  .sem small{font-size:14px;color:var(--tenue);font-weight:600}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+  .chip{background:var(--panel2);border:1px solid var(--linea);border-radius:999px;padding:5px 11px;font-size:12.5px;color:var(--tenue)}
+  .chip b{color:var(--texto);font-weight:700}
+  .sesion{border-left:3px solid var(--linea);padding-left:11px;margin:12px 0}
+  .sesion.cal{border-color:var(--acento)}
+  .sesion.lar{border-color:var(--azul)}
+  .sesion.fac{border-color:var(--ok)}
+  .sesion .t{font-weight:700;font-size:15px;display:flex;justify-content:space-between;gap:8px;align-items:center}
+  .sesion .d{color:var(--tenue);font-size:13.5px;margin-top:3px}
+  .hecha{opacity:.55}
+  .bt{
+    font-family:inherit;font-size:14px;font-weight:700;border-radius:11px;padding:10px 14px;
+    border:1px solid var(--linea);background:var(--panel2);color:var(--texto);cursor:pointer;
+  }
+  .bt.pri{background:var(--acento);border-color:var(--acento);color:#151006}
+  .bt.mini{padding:7px 11px;font-size:12.5px;font-weight:600}
+  .bt:active{transform:scale(.98)}
+  .zona{
+    display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px;
+  }
+  .zbox{background:var(--panel2);border:1px solid var(--linea);border-radius:11px;padding:9px 11px}
+  .zbox .k{font-size:11.5px;color:var(--tenue);letter-spacing:.6px;font-weight:700}
+  .zbox .v{font-size:17px;font-weight:800;margin-top:2px}
+  .zbox.z2{border-color:var(--ok)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--tenue);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.7px;padding:7px 6px;border-bottom:1px solid var(--linea);position:sticky;top:0;background:var(--panel)}
+  td{padding:8px 6px;border-bottom:1px solid rgba(36,48,64,.55);vertical-align:top}
+  tr.actual td{background:rgba(255,122,69,.10);font-weight:600}
+  tr.desc td{color:var(--tenue)}
+  #pFilas td:nth-child(2){white-space:nowrap;font-size:12.5px}
+  #pFilas td:nth-child(5){font-size:12px;line-height:1.35}
+  .num{text-align:right;white-space:nowrap}
+  nav{
+    position:fixed;bottom:0;left:0;right:0;z-index:30;display:flex;
+    background:rgba(19,26,34,.97);border-top:1px solid var(--linea);
+    padding-bottom:env(safe-area-inset-bottom);backdrop-filter:blur(10px);
+    max-width:680px;margin:0 auto;
+  }
+  nav button{
+    flex:1;background:none;border:0;color:var(--tenue);font-family:inherit;font-size:11.5px;
+    font-weight:700;padding:9px 4px 11px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;
+  }
+  nav button i{font-style:normal;font-size:19px;line-height:1}
+  nav button.on{color:var(--acento)}
+  .hoja{
+    position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:40;display:none;
+    align-items:flex-end;justify-content:center;
+  }
+  .hoja.abierta{display:flex}
+  .hoja .caja{
+    background:var(--panel);width:100%;max-width:560px;border-radius:18px 18px 0 0;
+    padding:16px 16px calc(18px + env(safe-area-inset-bottom));
+    max-height:92vh;overflow:auto;border-top:1px solid var(--linea);
+  }
+  label{display:block;font-size:12px;color:var(--tenue);font-weight:700;margin:10px 0 4px;letter-spacing:.3px}
+  input,select,textarea{
+    width:100%;max-width:100%;min-width:0;padding:11px 12px;border-radius:10px;border:1px solid var(--linea);
+    background:var(--fondo);color:var(--texto);font-family:inherit;font-size:max(16px,1em);
+  }
+  .dos{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .dos > div{min-width:0}
+  .aviso{font-size:12.5px;color:var(--tenue);margin-top:8px;min-height:16px}
+  .aviso.err{color:var(--mal)}
+  .aviso.ok{color:var(--ok)}
+  pre{
+    background:var(--fondo);border:1px solid var(--linea);border-radius:10px;padding:11px;
+    font-size:11.5px;line-height:1.5;overflow:auto;max-height:260px;color:#b9c8da;
+    font-family:ui-monospace,Menlo,Consolas,monospace;white-space:pre;
+  }
+  .peq{font-size:12.5px;color:var(--tenue);margin:6px 0 0}
+  .sep{height:1px;background:var(--linea);margin:14px 0}
+  .oculto{display:none!important}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="marca">MARATÓN <span id="mCarrera">· 21 semanas</span></div>
+  <div class="atletas" id="atletas"></div>
+</header>
+
+<main>
+  <!-- HOY -->
+  <section id="vHoy">
+    <div class="card">
+      <div class="fila"><h2 style="margin:0">Semana</h2><span class="chip" id="hFechas"></span></div>
+      <div class="sem" style="margin-top:8px"><span id="hNum">1</span><small> / 21</small></div>
+      <div class="chips">
+        <span class="chip">Total <b id="hKm">–</b> km</span>
+        <span class="chip">Larga <b id="hLarga">–</b> km</span>
+        <span class="chip" id="hRestan">–</span>
+      </div>
+      <p class="peq" id="hNota"></p>
+    </div>
+
+    <div class="card">
+      <h2>Las tres de esta semana</h2>
+      <div id="hSesiones"></div>
+      <div class="sesion fac" id="hFacil">
+        <div class="t">Fácil<button class="bt mini" data-reg="facil">Hacer</button></div>
+        <div class="d">45-60 min en Z2, se puede hablar en frases completas.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Zonas de <span id="hNombre">–</span> · FC máx <span id="hFcmax">–</span></h2>
+      <div class="zona" id="hZonas"></div>
+      <p class="peq" id="hZonaNota">En subida manda el pulso: si se pasa del techo, se camina.</p>
+    </div>
+  </section>
+
+  <!-- PLAN -->
+  <section id="vPlan" class="oculto">
+    <div class="card" style="padding:8px 6px">
+      <table>
+        <thead><tr><th>Sem</th><th>Fechas</th><th class="num">Km</th><th class="num">Larga</th><th>Calidad</th></tr></thead>
+        <tbody id="pFilas"></tbody>
+      </table>
+    </div>
+    <p class="peq" id="pTotal"></p>
+  </section>
+
+  <!-- REGISTRO -->
+  <section id="vReg" class="oculto">
+    <div class="card">
+      <div class="fila"><h2 style="margin:0">Registro</h2><button class="bt mini pri" id="bNueva">+ Sesión</button></div>
+      <div id="rLista" style="margin-top:10px"></div>
+    </div>
+    <div class="card">
+      <h2>Resumen</h2>
+      <div class="chips" id="rResumen"></div>
+    </div>
+  </section>
+
+  <!-- AGENTE -->
+  <section id="vAgente" class="oculto">
+    <div class="card">
+      <h2>Este teléfono es de</h2>
+      <p class="peq">Si le pasas la app a otra persona, aquí cambia el nombre y su FC máxima y las
+        cinco zonas se recalculan solas.</p>
+      <div class="dos">
+        <div><label>Nombre</label><input id="pNombre" maxlength="40"></div>
+        <div><label>Edad</label><input id="pEdad" type="number" inputmode="numeric" min="10" max="100"></div>
+      </div>
+      <div class="dos">
+        <div><label>FC máxima</label><input id="pFcmax" type="number" inputmode="numeric" min="120" max="220"></div>
+        <div><label>FC en reposo</label><input id="pReposo" type="number" inputmode="numeric" min="30" max="110" placeholder="opcional"></div>
+      </div>
+      <button class="bt pri" style="width:100%;margin-top:10px" id="bPerfil">Guardar perfil</button>
+      <button class="bt" style="width:100%;margin-top:8px" id="bReiniciar">Dejar este lugar en blanco</button>
+      <div class="aviso" id="pAviso"></div>
+    </div>
+
+    <div class="card">
+      <h2>Tu plan, en manos de una IA</h2>
+      <p class="peq">Esta app no depende de su pantalla: los datos viven en un módulo aparte
+        (<b>agente.js</b>) con un contrato fijo. Cualquier agente puede leer el plan, anotar sesiones
+        y ajustar semanas.</p>
+      <div class="chips" style="margin-top:10px">
+        <span class="chip">API <b>plan-maraton/v1</b></span>
+        <span class="chip" id="aEstado">–</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Claves de datos</h2>
+      <div class="chips" id="aReg"></div>
+      <button class="bt pri" style="width:100%;margin-top:10px" id="bExportar">⬇️ Exportar plan (.json)</button>
+      <button class="bt" style="width:100%;margin-top:8px" id="bImportar">⬆️ Importar plan</button>
+      <input type="file" id="fImportar" accept="application/json,.json" class="oculto">
+      <div class="aviso" id="aAviso"></div>
+    </div>
+
+    <div class="card">
+      <h2>Webhook del agente</h2>
+      <p class="peq">Si tu agente vive en otro lado (tu Hermes, n8n), dale una URL https y recibe el
+        estado en cada cambio.</p>
+      <input id="aWebhook" placeholder="https://mi-agente/maraton" inputmode="url">
+      <button class="bt" style="width:100%;margin-top:8px" id="bWebhook">Guardar webhook</button>
+      <div class="aviso" id="aW"></div>
+    </div>
+
+    <div class="card">
+      <h2>Contrato para el agente</h2>
+      <p class="peq">Copia esto y pégalo en el prompt de cualquier agente.</p>
+      <pre id="aDocs"></pre>
+      <button class="bt" style="width:100%;margin-top:8px" id="bCopiar">Copiar contrato</button>
+    </div>
+  </section>
+</main>
+
+<nav>
+  <button data-v="Hoy" class="on"><i>🏃</i>Hoy</button>
+  <button data-v="Plan"><i>📅</i>Plan</button>
+  <button data-v="Reg"><i>📈</i>Registro</button>
+  <button data-v="Agente"><i>🤖</i>Agente</button>
+</nav>
+
+<!-- hoja de registro -->
+<div class="hoja" id="hoja">
+  <div class="caja">
+    <div class="fila"><b style="font-size:16px">Anotar sesión</b><button class="bt mini" id="bCerrar">Cerrar</button></div>
+    <label>Tipo</label>
+    <select id="fTipo">
+      <option value="calidad">Calidad</option>
+      <option value="facil">Fácil</option>
+      <option value="larga">Larga</option>
+      <option value="fuerza">Fuerza</option>
+      <option value="carrera">Carrera</option>
+      <option value="otro">Otro</option>
+    </select>
+    <div class="dos">
+      <div><label>Fecha</label><input type="date" id="fFecha"></div>
+      <div><label>Duración (min)</label><input type="number" id="fMin" inputmode="numeric" min="1" max="1440" placeholder="45"></div>
+    </div>
+    <div class="dos">
+      <div><label>Distancia (km)</label><input type="number" id="fKm" inputmode="decimal" step="0.1" min="0" placeholder="8"></div>
+      <div><label>Esfuerzo 1-10</label><input type="number" id="fEsf" inputmode="numeric" min="1" max="10" placeholder="4"></div>
+    </div>
+    <div class="dos">
+      <div><label>FC media</label><input type="number" id="fFcm" inputmode="numeric" min="30" max="230" placeholder="128"></div>
+      <div><label>FC máxima</label><input type="number" id="fFcx" inputmode="numeric" min="30" max="230" placeholder="140"></div>
+    </div>
+    <label>Zona que salió</label>
+    <div class="chip" id="fZona" style="display:inline-block">–</div>
+    <label>Molestia (dónde y en qué minuto)</label>
+    <input id="fMolestia" placeholder="ninguna">
+    <div class="aviso" id="fAviso"></div>
+    <button class="bt pri" style="width:100%;margin-top:10px" id="bGuardar">Guardar sesión</button>
+  </div>
+</div>
+
+<script src="agente.js"></script>
+<script>
+(function () {
+  'use strict';
+  var A = window.Agente;
+  var UI = 'maraton.ui.v1';
+  var atleta = 'jonah';
+  var vista = 'Hoy';
+
+  function $(s) { return document.querySelector(s); }
+  function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, function (c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+  // ---------------------------------------------------------------- atletas
+  function pintarAtletas() {
+    var lista = A.atletas().atletas;
+    $('#atletas').innerHTML = lista.map(function (a) {
+      return '<button data-at="' + a.id + '" class="' + (a.id === atleta ? 'on' : '') + '">' +
+             esc(a.nombre) + ' · FC ' + a.fcmax + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(document.querySelectorAll('#atletas button'), function (b) {
+      b.onclick = function () { atleta = b.dataset.at; guardarUI(); pintarTodo(); };
+    });
+  }
+
+  function guardarUI() {
+    try { localStorage.setItem(UI, JSON.stringify({ atleta: atleta, vista: vista })); } catch (e) {}
+  }
+  function cargarUI() {
+    try {
+      var o = JSON.parse(localStorage.getItem(UI) || '{}');
+      if (o.atleta === 'jonah' || o.atleta === 'yuli') atleta = o.atleta;
+      if (o.vista && ['Hoy','Plan','Reg','Agente'].indexOf(o.vista) >= 0) vista = o.vista;
+    } catch (e) {}
+  }
+
+  // ------------------------------------------------------------------- hoy
+  function pintarHoy() {
+    var d = A.leer(atleta), h = A.sesionDeHoy(atleta), f = h.fila;
+    $('#hNombre').textContent = d.atleta.nombre;
+    $('#hFcmax').textContent = d.atleta.fcmax;
+    $('#mCarrera').textContent = '· ' + d.atleta.carrera.split('-').reverse().join('/');
+    $('#hNum').textContent = h.semana;
+    $('#hFechas').textContent = f.fechas;
+    $('#hKm').textContent = f.km;
+    $('#hLarga').textContent = f.larga;
+    $('#hNota').textContent = f.nota || '';
+
+    var hechas = {};
+    h.registradas.forEach(function (r) { hechas[r.tipo] = r; });
+    $('#hRestan').innerHTML = h.pendientes.length ?
+      '<b>' + h.pendientes.length + '</b> pendientes' : '<b>Semana completa</b> ✅';
+
+    var cal = hechas.calidad, lar = hechas.larga, fac = hechas.facil;
+    $('#hSesiones').innerHTML =
+      '  <div class="sesion cal ' + (cal ? 'hecha' : '') + '">' +
+      '    <div class="t">Calidad' + (cal ? ' ✅' : '') +
+      '      <button class="bt mini" data-reg="calidad">' + (cal ? 'Otra' : 'Hacer') + '</button></div>' +
+      '    <div class="d">' + esc(f.calidad) + ' · con fuerza 15-20 min al final</div></div>' +
+      '  <div class="sesion lar ' + (lar ? 'hecha' : '') + '">' +
+      '    <div class="t">Larga · ' + f.larga + ' km' + (lar ? ' ✅' : '') +
+      '      <button class="bt mini" data-reg="larga" data-km="' + f.larga + '">' + (lar ? 'Otra' : 'Hacer') + '</button></div>' +
+      '    <div class="d">Z2 · si el terreno trae cuestas, se camina la subida</div></div>';
+
+    $('#hFacil').className = 'sesion fac' + (fac ? ' hecha' : '');
+    $('#hFacil').querySelector('.t').firstChild.nodeValue = 'Fácil' + (fac ? ' ✅' : '');
+    $('#hFacil').querySelector('button').textContent = fac ? 'Otra' : 'Hacer';
+
+    var z = d.atleta.zonas, filas = '';
+    ['Z1','Z2','Z3','Z4','Z5'].forEach(function (k) {
+      filas += '<div class="zbox ' + (k === 'Z2' ? 'z2' : '') + '"><div class="k">' + k +
+               '</div><div class="v">' + z[k][0] + '-' + z[k][1] + '</div></div>';
+    });
+    $('#hZonas').innerHTML = filas;
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-reg]'), function (b) {
+      b.onclick = function (ev) {
+        ev.stopPropagation();
+        abrirRegistro(b.dataset.reg, b.dataset.km);
+      };
+    });
+  }
+
+  // ------------------------------------------------------------------ plan
+  function pintarPlan() {
+    var d = A.leer(atleta), actual = A.semanaDe(A.hoy());
+    $('#pFilas').innerHTML = d.semanas.map(function (s) {
+      var desc = [4, 8, 12, 16, 19].indexOf(s.n) >= 0;
+      return '<tr class="' + (s.n === actual ? 'actual' : (desc ? 'desc' : '')) + '">' +
+        '<td>' + s.n + '</td><td>' + esc(s.fechas) + '</td>' +
+        '<td class="num">' + s.km + '</td><td class="num">' + s.larga + '</td>' +
+        '<td>' + esc(s.calidad) + '</td></tr>';
+    }).join('');
+    var suma = d.semanas.reduce(function (a, s) { return a + (s.km || 0); }, 0);
+    var entreno = d.semanas.filter(function (s) { return s.n < 21; })
+                           .reduce(function (a, s) { return a + (s.km || 0); }, 0);
+    var carrera = d.semanas.filter(function (s) { return s.n === 21; })
+                           .reduce(function (a, s) { return a + (s.km || 0); }, 0);
+    $('#pTotal').textContent = 'Entrenamiento ' + Math.round(entreno) + ' km + carrera ' +
+      (carrera % 1 ? carrera.toFixed(1) : Math.round(carrera)) + ' km = ' + suma.toFixed(1).replace('.0','') +
+      ' km · meta ' + d.atleta.meta + ' · carrera ' + d.atleta.carrera + ' · el pulso manda, el ritmo es referencia.';
+  }
+
+  // -------------------------------------------------------------- registro
+  function pintarReg() {
+    var d = A.leer(atleta), reg = d.registro.slice().reverse();
+    if (!reg.length) {
+      $('#rLista').innerHTML = '<p class="peq">Todavía no hay sesiones anotadas. Usa «+ Sesión».</p>';
+    } else {
+      $('#rLista').innerHTML = reg.map(function (r) {
+        return '<div class="sesion ' + (r.tipo === 'calidad' ? 'cal' : r.tipo === 'larga' ? 'lar' : 'fac') + '">' +
+          '<div class="t">' + esc(r.fecha) + ' · ' + esc(r.tipo) +
+          (r.zona ? ' · ' + esc(r.zona) : '') +
+          ' <button class="bt mini" data-del="' + esc(r.fecha) + '|' + esc(r.tipo) + '">✕</button></div>' +
+          '<div class="d">' +
+            (r.km != null ? r.km + ' km · ' : '') +
+            (r.min != null ? r.min + ' min · ' : '') +
+            (r.fc_media != null ? 'FC ' + r.fc_media + (r.fc_max != null ? '/' + r.fc_max : '') + ' · ' : '') +
+            (r.esf != null ? 'esf ' + r.esf : '') +
+            (r.molestia ? ' · ⚠️ ' + esc(r.molestia) : '') +
+          '</div></div>';
+      }).join('');
+      Array.prototype.forEach.call(document.querySelectorAll('[data-del]'), function (b) {
+        b.onclick = function () {
+          var p = b.dataset.del.split('|');
+          if (!confirm('¿Borrar ' + p[1] + ' del ' + p[0] + '?')) return;
+          var r = A.borrar(atleta, p[0], p[1]);
+          if (!r.ok) alert(r.error);
+          pintarTodo();
+        };
+      });
+    }
+    var total = reg.length;
+    var km = reg.reduce(function (a, r) { return a + (r.km || 0); }, 0);
+    var min = reg.reduce(function (a, r) { return a + (r.min || 0); }, 0);
+    $('#rResumen').innerHTML =
+      '<span class="chip">Sesiones <b>' + total + '</b></span>' +
+      '<span class="chip">Km <b>' + km.toFixed(1) + '</b></span>' +
+      '<span class="chip">Horas <b>' + (min / 60).toFixed(1) + '</b></span>' +
+      '<span class="chip">Promedio <b>' + (total ? (km / total).toFixed(1) : '0') + '</b> km</span>';
+  }
+
+  // ---------------------------------------------------------------- agente
+  function pintarAgente() {
+    var d = A.leer(atleta);
+    $('#aEstado').innerHTML = 'atleta <b>' + esc(d.atleta.nombre) + '</b> · ' + d.registro.length + ' sesiones';
+    $('#aReg').innerHTML = ['atletas','leer','zonas','sesionDeHoy','registrar','borrar','ajustarSemana','exportar','importar','webhook']
+      .map(function (f) { return '<span class="chip">Agente.' + f + '()</span>'; }).join('');
+    $('#aDocs').textContent = A.docs();
+    var e = JSON.parse(localStorage.getItem('maraton.v1') || '{}');
+    $('#aWebhook').value = e.webhook || '';
+    $('#pNombre').value = d.atleta.nombre;
+    $('#pEdad').value = d.atleta.edad;
+    $('#pFcmax').value = d.atleta.fcmax;
+    $('#pReposo').value = d.atleta.fc_reposo || '';
+  }
+
+  function perfilGuardar() {
+    var r = A.perfil(atleta, {
+      nombre: $('#pNombre').value, edad: $('#pEdad').value,
+      fcmax: $('#pFcmax').value, fc_reposo: $('#pReposo').value
+    });
+    $('#pAviso').textContent = r.ok ? ('Guardado · zonas con FC ' + r.fcmax) : r.error;
+    $('#pAviso').className = 'aviso ' + (r.ok ? 'ok' : 'err');
+    if (r.ok) pintarTodo();
+  }
+
+  function pintarTodo() {
+    pintarAtletas(); pintarHoy(); pintarPlan(); pintarReg(); pintarAgente();
+    Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) {
+      b.classList.toggle('on', b.dataset.v === vista);
+    });
+    ['Hoy','Plan','Reg','Agente'].forEach(function (v) {
+      $('#v' + v).classList.toggle('oculto', v !== vista);
+    });
+  }
+
+  // --------------------------------------------------------------- registro
+  function abrirRegistro(tipo, km) {
+    $('#fTipo').value = tipo || 'facil';
+    $('#fFecha').value = A.hoy();
+    $('#fKm').value = km || '';
+    $('#fMin').value = '';
+    $('#fEsf').value = '';
+    $('#fFcm').value = '';
+    $('#fFcx').value = '';
+    $('#fMolestia').value = '';
+    $('#fAviso').textContent = '';
+    $('#fAviso').className = 'aviso';
+    $('#fZona').textContent = '–';
+    $('#hoja').classList.add('abierta');
+  }
+  function cerrarRegistro() { $('#hoja').classList.remove('abierta'); }
+
+  function zonaEnVivo() {
+    var v = $('#fFcm').value;
+    if (v === '') { $('#fZona').textContent = '–'; return; }
+    var z = A.zonas(atleta).zonas, k;
+    for (k in z) if (Number(v) >= z[k][0] && Number(v) <= z[k][1]) { $('#fZona').textContent = k; return; }
+    $('#fZona').textContent = Number(v) < z.Z1[0] ? 'bajo Z1' : 'sobre Z5';
+  }
+
+  // ---------------------------------------------------------------- eventos
+  $('#bCerrar').onclick = cerrarRegistro;
+  $('#hoja').onclick = function (e) { if (e.target === $('#hoja')) cerrarRegistro(); };
+  $('#fFcm').oninput = zonaEnVivo;
+  $('#bNueva').onclick = function () { abrirRegistro('facil'); };
+
+  $('#bGuardar').onclick = function () {
+    var r = A.registrar(atleta, {
+      tipo: $('#fTipo').value, fecha: $('#fFecha').value,
+      km: $('#fKm').value, min: $('#fMin').value,
+      fc_media: $('#fFcm').value, fc_max: $('#fFcx').value,
+      esf: $('#fEsf').value, molestia: $('#fMolestia').value
+    });
+    if (!r.ok) {
+      $('#fAviso').textContent = r.error;
+      $('#fAviso').className = 'aviso err';
+      return;
+    }
+    $('#fAviso').textContent = 'Guardado ✅';
+    $('#fAviso').className = 'aviso ok';
+    pintarTodo();
+    setTimeout(function () { cerrarRegistro(); vista = 'Reg'; pintarTodo(); }, 550);
+  };
+
+  Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) {
+    b.onclick = function () { vista = b.dataset.v; guardarUI(); pintarTodo(); };
+  });
+
+  $('#bExportar').onclick = function () {
+    var r = A.exportar(atleta);
+    if (!r.ok) { $('#aAviso').textContent = r.error; return; }
+    var blob = new Blob([r.json], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'plan-' + atleta + '-' + A.hoy() + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+    $('#aAviso').textContent = 'Archivo generado ✅';
+    $('#aAviso').className = 'aviso ok';
+  };
+
+  $('#bImportar').onclick = function () { $('#fImportar').click(); };
+  $('#fImportar').onchange = function () {
+    var f = this.files && this.files[0];
+    if (!f) return;
+    var lector = new FileReader();
+    lector.onload = function () {
+      try {
+        var r = A.importar(String(lector.result));
+        $('#aAviso').textContent = r.ok ? ('Importadas ' + r.importadas + ' sesiones ✅') : r.error;
+        $('#aAviso').className = 'aviso ' + (r.ok ? 'ok' : 'err');
+        pintarTodo();
+      } catch (e) {
+        $('#aAviso').textContent = 'El archivo no es un JSON válido';
+        $('#aAviso').className = 'aviso err';
+      }
+    };
+    lector.readAsText(f);
+  };
+
+  $('#bPerfil').onclick = perfilGuardar;
+
+  $('#bReiniciar').onclick = function () {
+    if (!confirm('¿Borrar el registro, los ajustes y el perfil de este lugar? El plan queda intacto.')) return;
+    var r = A.reiniciar(atleta);
+    $('#pAviso').textContent = r.ok ? 'Lugar en blanco, listo para otra persona' : r.error;
+    $('#pAviso').className = 'aviso ' + (r.ok ? 'ok' : 'err');
+    pintarTodo();
+  };
+
+  $('#bWebhook').onclick = function () {
+    var r = A.webhook($('#aWebhook').value.trim());
+    $('#aW').textContent = r.ok ? (r.webhook ? 'Webhook guardado ✅' : 'Webhook quitado') : r.error;
+    $('#aW').className = 'aviso ' + (r.ok ? 'ok' : 'err');
+  };
+
+  $('#bCopiar').onclick = function () {
+    var t = A.docs();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t).then(function () {
+        $('#bCopiar').textContent = 'Copiado ✅';
+        setTimeout(function () { $('#bCopiar').textContent = 'Copiar contrato'; }, 1800);
+      });
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = t; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      ta.remove();
+    }
+  };
+
+  // ----------------------------------------------------------------- arranque
+  cargarUI();
+  if (window.__hashAplicado) { pintarTodo(); }
+  pintarTodo();
+
+  // El puente avisa cuando aplica un #agent=... y cuando algo cambia desde fuera.
+  document.addEventListener('agente:listo', pintarTodo);
+  window.__refrescar = pintarTodo;
+  // ------------------------------------------------------------ service worker
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' ||
+      location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () { /* sin SW la app sigue funcionando */ });
+    });
+  }
+})();
+</script>
+</body>
+</html>
