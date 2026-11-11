@@ -416,6 +416,17 @@
 
     hoy: hoyISO,
     semanaDe: semanaDe,
+    hoy: hoyISO,
+    iso: function (d) {
+      var m = d.getMonth() + 1, dd = d.getDate();
+      return d.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (dd < 10 ? '0' : '') + dd;
+    },
+    fechasDeSemana: function (n) {
+      var ini = new Date(INICIO + (n - 1) * 7 * 86400000);
+      var fin = new Date(ini.getTime() + 6 * 86400000);
+      function f(x) { var y = x.getDate(); return (y < 10 ? '0' : '') + y; }
+      return f(ini) + '-' + f(fin);
+    },
 
     contrato: function () {
       return {

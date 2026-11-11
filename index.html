@@ -111,6 +111,14 @@
     font-family:ui-monospace,Menlo,Consolas,monospace;white-space:pre;
   }
   .peq{font-size:12.5px;color:var(--tenue);margin:6px 0 0}
+  .dias{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin:4px 0 10px}
+  .dias button{background:var(--panel2);border:1px solid var(--linea);border-radius:10px;color:var(--tenue);
+    padding:6px 0;font:inherit;font-size:12.5px;line-height:1.25;min-width:0}
+  .dias button b{display:block;font-size:14px;color:var(--texto);font-weight:600}
+  .dias button.on{background:var(--acento);border-color:var(--acento)}
+  .dias button.on b{color:#12161c}
+  .dias button.hoy{border-color:var(--azul)}
+  .dias button .pt{display:block;width:5px;height:5px;border-radius:50%;background:var(--azul);margin:3px auto 0}
   .sep{height:1px;background:var(--linea);margin:14px 0}
   .oculto{display:none!important}
 </style>
@@ -127,7 +135,8 @@
   <section id="vHoy">
     <div class="card">
       <div class="fila"><h2 style="margin:0">Semana</h2><span class="chip" id="hFechas"></span></div>
-      <div class="sem" style="margin-top:8px"><span id="hNum">1</span><small> / 21</small></div>
+      <div class="sem" style="margin-top:8px"><span id="hNum">1</span><small> / 21</small><span class="peq" id="hDiaSel" style="display:inline"></span></div>
+      <div class="dias" id="hDias"></div>
       <div class="chips">
         <span class="chip">Total <b id="hKm">–</b> km</span>
         <span class="chip">Larga <b id="hLarga">–</b> km</span>
@@ -166,7 +175,13 @@
   <!-- REGISTRO -->
   <section id="vReg" class="oculto">
     <div class="card">
-      <div class="fila"><h2 style="margin:0">Registro</h2><button class="bt mini pri" id="bNueva">+ Sesión</button></div>
+      <div class="fila"><h2 style="margin:0">Registro</h2>
+        <span>
+          <button class="bt mini" id="bImportarAct" title="Importar de Garmin o Strava">⤓ Importar</button>
+          <button class="bt mini pri" id="bNueva">+ Sesión</button>
+        </span></div>
+      <input type="file" id="fAct" accept=".tcx,.gpx,.csv,.fit" style="display:none">
+      <div class="chips" id="iPrev" style="margin-top:8px"></div>
       <div id="rLista" style="margin-top:10px"></div>
     </div>
     <div class="card">
@@ -310,13 +325,44 @@
   }
 
   // ------------------------------------------------------------------- hoy
+  // Dias de la semana que se esta viendo (el plan dice que toca; el dia solo elige cual mirar).
+  var diaSel = null;   // null = hoy
+  function diaActivo() {
+    if (!diaSel) return A.hoy();
+    return diaSel;
+  }
+  function pintarDias() {
+    var hoy = A.hoy();
+    var fecha = diaActivo();
+    // los siete dias de esa semana se calculan desde el lunes
+    var f0 = new Date(fecha + 'T12:00:00');
+    var dow = (f0.getDay() + 6) % 7;         // lunes = 0
+    f0.setDate(f0.getDate() - dow);
+    var reg = A.leer(atleta).registro, hechos = {};
+    reg.forEach(function (r) { hechos[r.fecha] = true; });
+    var cls = ['L','M','M','J','V','S','D'], html = '';
+    for (var i = 0; i < 7; i++) {
+      var d = new Date(f0.getTime() + i * 86400000);
+      var iso = A.iso(d);
+      html += '<button data-dia="' + iso + '" class="' + (iso === fecha ? 'on ' : '') +
+              (iso === hoy ? 'hoy' : '') + '" title="' + iso + '"><b>' + d.getDate() + '</b>' + cls[i] +
+              (hechos[iso] ? '<span class="pt"></span>' : '') + '</button>';
+    }
+    $('#hDias').innerHTML = html;
+    Array.prototype.forEach.call(document.querySelectorAll('#hDias button'), function (b) {
+      b.onclick = function () { diaSel = (b.dataset.dia === A.hoy()) ? null : b.dataset.dia; pintarHoy(); };
+    });
+  }
+
   function pintarHoy() {
-    var d = A.leer(atleta), h = A.sesionDeHoy(atleta), f = h.fila;
+    pintarDias();
+    var d = A.leer(atleta), h = A.sesionDeHoy(atleta, diaActivo()), f = h.fila;
     $('#hNombre').textContent = d.atleta.nombre;
     $('#hFcmax').textContent = d.atleta.fcmax;
     $('#mCarrera').textContent = '· ' + d.atleta.carrera.split('-').reverse().join('/');
     $('#hNum').textContent = h.semana;
     $('#hFechas').textContent = f.fechas;
+    if ($('#hDiaSel')) $('#hDiaSel').textContent = diaSel ? (' · viendo ' + diaSel.split('-').reverse().join('/')) : '';
     $('#hKm').textContent = f.km;
     $('#hLarga').textContent = f.larga;
     $('#hNota').textContent = f.nota || '';
@@ -361,11 +407,26 @@
     var d = A.leer(atleta), actual = A.semanaDe(A.hoy());
     $('#pFilas').innerHTML = d.semanas.map(function (s) {
       var desc = [4, 8, 12, 16, 19].indexOf(s.n) >= 0;
-      return '<tr class="' + (s.n === actual ? 'actual' : (desc ? 'desc' : '')) + '">' +
+      return '<tr class="' + (s.n === actual ? 'actual' : (desc ? 'desc' : '')) + '" data-w="' + s.n + '">' +
         '<td>' + s.n + '</td><td>' + esc(s.fechas) + '</td>' +
         '<td class="num">' + s.km + '</td><td class="num">' + s.larga + '</td>' +
         '<td>' + esc(s.calidad) + '</td></tr>';
     }).join('');
+    // Tocar una semana lleva a su lunes en la pestaña Hoy.
+    Array.prototype.forEach.call(document.querySelectorAll('#pFilas tr'), function (tr) {
+      tr.onclick = function () {
+        var n = Number(tr.dataset.w);
+        var lunes = new Date(Date.UTC(2026, 10, 9) + (n - 1) * 7 * 86400000);
+        diaSel = (A.iso(lunes) === A.hoy()) ? null : A.iso(lunes);
+        var entre = A.sesionDeHoy(atleta, diaSel || A.hoy());
+        // Si la semana ya paso o es futura, se abre su lunes; si es la de hoy, el dia de hoy.
+        if (entre.semana === n && n !== A.semanaDe(A.hoy())) {
+          diaSel = A.iso(lunes);
+        }
+        vista = 'Hoy'; guardarUI(); pintarTodo();
+        window.scrollTo(0, 0);
+      };
+    });
     var suma = d.semanas.reduce(function (a, s) { return a + (s.km || 0); }, 0);
     var entreno = d.semanas.filter(function (s) { return s.n < 21; })
                            .reduce(function (a, s) { return a + (s.km || 0); }, 0);
@@ -453,7 +514,7 @@
   // --------------------------------------------------------------- registro
   function abrirRegistro(tipo, km) {
     $('#fTipo').value = tipo || 'facil';
-    $('#fFecha').value = A.hoy();
+    $('#fFecha').value = diaActivo();
     $('#fKm').value = km || '';
     $('#fMin').value = '';
     $('#fEsf').value = '';
@@ -533,6 +594,215 @@
       }
     };
     lector.readAsText(f);
+  };
+
+  // ------------------------------------------------------------ importar Garmin/Strava
+  // Acepta .tcx y .gpx (Garmin Connect, Strava) y .csv (export de Strava). No sube nada:
+  // el archivo se lee en el telefono y solo se guardan las sesiones.
+  function isoUTC(txt) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(txt || ''));
+    return m ? (m[1] + '-' + m[2] + '-' + m[3]) : null;
+  }
+  function rangoZona(v) {
+    if (v == null || !isFinite(v)) return '';
+    var z = A.zonas(atleta).zonas, k;
+    for (k in z) if (v >= z[k][0] && v <= z[k][1]) return k;
+    return v < z.Z1[0] ? 'bajo Z1' : 'Z5+';
+  }
+  // Une la FC de todos los puntos: la media pesa por tiempo.
+  function fcDePuntos(puntos) {
+    var sum = 0, n = 0, max = null;
+    puntos.forEach(function (p) { if (p.fc) { sum += p.fc; n++; if (!max || p.fc > max) max = p.fc; } });
+    return { media: n ? Math.round(sum / n) : null, max: max };
+  }
+  function leerTCX(txt) {
+    var doc = new DOMParser().parseFromString(txt, 'application/xml');
+    if (doc.querySelector('parsererror')) return { error: 'El TCX esta dañado' };
+    var act = doc.querySelector('Activity');
+    var fecha = act ? isoUTC(act.querySelector('Id') ? act.querySelector('Id').textContent : '') : null;
+    if (!fecha) { var l = doc.querySelector('Lap'); fecha = l ? isoUTC(l.getAttribute('StartTime')) : null; }
+    var dist = 0, seg = 0, pts = [];
+    Array.prototype.forEach.call(doc.querySelectorAll('Lap'), function (l) {
+      var t = l.querySelector('TotalTimeSeconds');
+      if (t) seg += Number(t.textContent) || 0;
+      // La distancia puede venir en <DistanceMeters> o en <Distance>
+      var d = l.getElementsByTagName('DistanceMeters')[0] || l.getElementsByTagName('Distance')[0] ||
+              l.querySelector('Distance');
+      if (d) dist += Number(d.textContent) || 0;
+    });
+    if (!dist) {
+      // Hay TCX sin distancia por vuelta: se suma la de cada punto cuando existe
+      Array.prototype.forEach.call(doc.getElementsByTagName('DistanceMeters'), function (d) {
+        var v = Number(d.textContent) || 0; if (v > dist) dist = v;
+      });
+    }
+    Array.prototype.forEach.call(doc.querySelectorAll('Trackpoint'), function (tp) {
+      var v = tp.querySelector('HeartRateBpm Value') || tp.querySelector('HeartRateBpm > Value');
+      pts.push({ fc: v ? Number(v.textContent) : null });
+    });
+    return { fecha: fecha, km: dist ? dist / 1000 : null, min: seg ? Math.round(seg / 60) : null, fc: fcDePuntos(pts) };
+  }
+  function leerGPX(txt) {
+    var doc = new DOMParser().parseFromString(txt, 'application/xml');
+    if (doc.querySelector('parsererror')) return { error: 'El GPX esta dañado' };
+    var trk = doc.querySelector('trkpt') || doc.querySelector('rtept');
+    var fecha = trk ? isoUTC(trk.querySelector('time') && trk.querySelector('time').textContent) : null;
+    var seg = doc.querySelector('trkseg');
+    var pts = [], acum = 0, anterior = null;
+    Array.prototype.forEach.call(doc.querySelectorAll('trkpt'), function (p) {
+      var lat = Number(p.getAttribute('lat')), lon = Number(p.getAttribute('lon'));
+      var v = p.querySelector('hr') || p.querySelector('extensions hr') || p.querySelector('*[localName="hr"]');
+      pts.push({ fc: v ? Number(v.textContent) : null });
+      if (anterior && isFinite(lat) && isFinite(lon)) {
+        var dx = 111.32 * (lon - anterior.lon) * Math.cos(lat * Math.PI / 180);
+        var dy = 110.57 * (lat - anterior.lat);
+        var d = Math.sqrt(dx * dx + dy * dy);
+        if (d < 0.25) acum += d;      // saltos de GPS se ignoran
+      }
+      anterior = { lat: lat, lon: lon };
+    });
+    var t0 = doc.querySelector('metadata time'), t1 = doc.querySelectorAll('trkpt time');
+    var min = null;
+    if (t0 && t1.length) min = Math.round((new Date(t1[t1.length - 1].textContent) - new Date(t0.textContent)) / 60000);
+    else if (t1.length) min = Math.round((new Date(t1[t1.length - 1].textContent) - new Date(t1[0].textContent)) / 60000);
+    return { fecha: fecha, km: acum || null, min: min, fc: fcDePuntos(pts) };
+  }
+  // "Nov 9, 2026, 6:40:12 AM" (Strava) | "9/11/2026 6:40" | "2026-11-09 06:40" | epoch en ms
+  var MESES = { jan:'01', feb:'02', mar:'03', apr:'04', may:'05', jun:'06', jul:'07', aug:'08', sep:'09',
+                oct:'10', nov:'11', dec:'12', ene:'01', abr:'04', ago:'08', dic:'12' };
+  function fechaDeCSV(txt) {
+    txt = String(txt || '').replace(/"/g, '').trim();
+    var m = isoUTC(txt);
+    if (m) return m;
+    m = /^([A-Za-z]{3})[a-z]*\s+(\d{1,2}),?\s+(\d{4})/.exec(txt);
+    if (m && MESES[m[1].toLowerCase()]) {
+      var d = m[2].length < 2 ? '0' + m[2] : m[2];
+      return m[3] + '-' + MESES[m[1].toLowerCase()] + '-' + d;
+    }
+    m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(txt);
+    if (m) {   // formato de EE. UU. (Strava exporta asi): mes/dia/año
+      var mes = Number(m[1]), dia = Number(m[2]);
+      if (mes > 12 && dia <= 12) { var t2 = mes; mes = dia; dia = t2; }
+      return m[3] + '-' + (mes < 10 ? '0' : '') + mes + '-' + (dia < 10 ? '0' : '') + dia;
+    }
+    if (/^\d{10,13}$/.test(txt)) {
+      var e = new Date(Number(txt) * (txt.length > 10 ? 1 : 1000));
+      return A.iso(e);
+    }
+    return null;
+  }
+  // Strava exporta metros; algunos exportan km. Si trae "km" o el valor es chico, se toma como km.
+  function distanciaKm(v) {
+    var t = String(v || '').replace(/"/g, '').trim().toLowerCase();
+    var num = Number(t.replace(/[^0-9.]/g, ''));
+    if (!isFinite(num) || !num) return null;
+    if (/km/.test(t)) return num;
+    if (/m\b|metros/.test(t)) return num / 1000;
+    return num > 500 ? num / 1000 : num;
+  }
+  // Corta una linea de CSV respetando las comillas: Strava escribe "Nov 9, 2026, 6:40 AM".
+  function campoCSV(linea) {
+    var out = [], act = '', comillas = false;
+    for (var i = 0; i < linea.length; i++) {
+      var ch = linea.charAt(i);
+      if (ch === '"') {
+        if (comillas && linea.charAt(i + 1) === '"') { act += '"'; i++; }
+        else comillas = !comillas;
+      } else if (ch === ',' && !comillas) { out.push(act); act = ''; }
+      else act += ch;
+    }
+    out.push(act);
+    return out.map(function (c) { return c.trim(); });
+  }
+  function leerCSV(txt) {
+    var lineas = txt.split(/\r?\n/).filter(function (l) { return l.trim(); });
+    if (lineas.length < 2) return { error: 'El CSV esta vacio' };
+    var cab = campoCSV(lineas[0]).map(function (c) { return c.toLowerCase(); });
+    function col() {
+      for (var i = 0; i < arguments.length; i++) {
+        var j = cab.indexOf(arguments[i]);
+        if (j >= 0) return j;
+      }
+      return -1;
+    }
+    var iF = col('activity date', 'date', 'fecha'), iT = col('activity type', 'type', 'tipo');
+    var iK = col('distance', 'distancia'), iM = col('moving time', 'elapsed time', 'time', 'tiempo');
+    var iH = col('average heart rate', 'avg hr', 'average_hr', 'fc media');
+    if (iF < 0) return { error: 'No encontre la columna de fecha (export de Strava o Garmin)' };
+    var hechas = 0, vistas = 0;
+    for (var i = 1; i < lineas.length; i++) {
+      var c = campoCSV(lineas[i]);
+      var fecha = fechaDeCSV(c[iF]);
+      if (!fecha) continue;
+      vistas++;
+      var tipo = 'facil';
+      if (iT >= 0) {
+        var t = c[iT].toLowerCase();
+        if (/run|corre|trail/.test(t)) tipo = 'facil';
+        else if (/ride|bici|walk|caminata|swim|nada/.test(t)) continue;
+      }
+      var km = iK >= 0 ? distanciaKm(c[iK]) : null;
+      var min = iM >= 0 ? Math.round(Number(String(c[iM]).replace(/[^0-9.]/g, '')) / 60) : null;
+      var fc = iH >= 0 ? Number(String(c[iH]).replace(/"/g, '')) : null;
+      if (!km) continue;
+      var r = A.registrar(atleta, { fecha: fecha, tipo: tipo, km: km, min: min, fc_media: fc });
+      if (r.ok) hechas++;
+    }
+    return { ok: true, km: null, min: null, fc: null, hechas: hechas, vistas: vistas };
+  }
+  function importarActividad(txt, nombre) {
+    var x = /<\?xml/i.test(txt.slice(0, 200));
+    var r;
+    if (x && /<TrainingCenterDatabase/i.test(txt)) r = leerTCX(txt);
+    else if (x && /<gpx/i.test(txt)) r = leerGPX(txt);
+    else r = leerCSV(txt);
+    if (r.error) return r;
+    if (r.hechas !== undefined) return r;
+    if (!r.fecha) r.fecha = A.hoy();
+    r.tipo = 'facil';
+    r.zona = rangoZona(r.fc && r.fc.media);
+    return r;
+  }
+  function previaImport(texto, nombre) {
+    var r = importarActividad(texto, nombre);
+    var caja = $('#iPrev');
+    if (r.error) {
+      caja.innerHTML = '<span class="chip" style="color:var(--rojo,#f66)">' + esc(r.error) + '</span>';
+      return;
+    }
+    if (r.hechas !== undefined) {
+      caja.innerHTML = '<span class="chip">' + r.hechas + ' sesiones nuevas de ' + r.vistas + ' actividades</span>';
+      pintarTodo();
+      return;
+    }
+    var partes = [];
+    if (r.km != null) partes.push(Number(r.km).toFixed(2) + ' km');
+    if (r.min != null) partes.push(r.min + ' min');
+    if (r.fc && r.fc.media) partes.push('FC ' + r.fc.media + (r.fc.max ? '/' + r.fc.max : '') + (r.zona ? ' · ' + r.zona : ''));
+    var dup = A.leer(atleta).registro.some(function (s) { return s.fecha === r.fecha && s.tipo === 'facil'; });
+    caja.innerHTML =
+      '<span class="chip">' + esc(nombre) + '</span>' +
+      '<span class="chip">' + esc(r.fecha) + '</span>' +
+      '<span class="chip">' + esc(partes.join(' · ') || 'sin datos') + '</span>' +
+      (dup ? '<span class="chip">ya hay una fácil ese día</span>'
+           : '<button class="bt mini pri" id="bImpOk">Guardar como fácil</button>');
+    var b = document.getElementById('bImpOk');
+    if (b) b.onclick = function () {
+      var x = A.registrar(atleta, { fecha: r.fecha, tipo: 'facil', km: r.km, min: r.min,
+        fc_media: r.fc && r.fc.media, fc_max: r.fc && r.fc.max, zona: r.zona });
+      caja.innerHTML = '<span class="chip">' + (x.ok ? 'Importada ✅' : esc(x.error)) + '</span>';
+      pintarTodo();
+    };
+  }
+
+  $('#bImportarAct').onclick = function () { $('#fAct').click(); };
+  $('#fAct').onchange = function () {
+    var f = this.files && this.files[0];
+    if (!f) return;
+    var lector = new FileReader();
+    lector.onload = function () { previaImport(String(lector.result), f.name); };
+    lector.readAsText(f);
+    this.value = '';
   };
 
   $('#bPerfil').onclick = perfilGuardar;
