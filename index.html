@@ -568,7 +568,10 @@
 
   // ----------------------------------------------------------------- arranque
   cargarUI();
-  if (window.__hashAplicado) { pintarTodo(); }
+  // Si la URL trae un paquete del agente, se aplica ANTES del primer pintado.
+  if (/[#&]agent=/.test(location.hash)) {
+    try { A.aplicarHash(); } catch (e) {}
+  }
   pintarTodo();
 
   // El puente avisa cuando aplica un #agent=... y cuando algo cambia desde fuera.
