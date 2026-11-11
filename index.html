@@ -417,12 +417,8 @@
       tr.onclick = function () {
         var n = Number(tr.dataset.w);
         var lunes = new Date(Date.UTC(2026, 10, 9) + (n - 1) * 7 * 86400000);
-        diaSel = (A.iso(lunes) === A.hoy()) ? null : A.iso(lunes);
-        var entre = A.sesionDeHoy(atleta, diaSel || A.hoy());
-        // Si la semana ya paso o es futura, se abre su lunes; si es la de hoy, el dia de hoy.
-        if (entre.semana === n && n !== A.semanaDe(A.hoy())) {
-          diaSel = A.iso(lunes);
-        }
+        // Si la semana elegida es la de hoy, se queda en el dia de hoy; si no, abre su lunes.
+        diaSel = (n === A.semanaDe(A.hoy())) ? null : A.iso(lunes);
         vista = 'Hoy'; guardarUI(); pintarTodo();
         window.scrollTo(0, 0);
       };
