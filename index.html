@@ -576,6 +576,7 @@
 
   // El puente avisa cuando aplica un #agent=... y cuando algo cambia desde fuera.
   document.addEventListener('agente:listo', pintarTodo);
+  document.addEventListener('agente:cambio', pintarTodo);
   window.__refrescar = pintarTodo;
   // ------------------------------------------------------------ service worker
   if ('serviceWorker' in navigator && (location.protocol === 'https:' ||
