@@ -43,7 +43,7 @@
 
   function vacio() {
     return { api: VERSION, registro: { jonah: [], yuli: [] }, ajustes: { jonah: [], yuli: [] },
-             perfiles: {}, planes: {}, webhook: null, salida: null };   // salida=null -> lo de abajo no se toco nunca
+             perfiles: {}, planes: {}, notas: {}, webhook: null, salida: null };   // salida=null -> lo de abajo no se toco nunca
   }
 
   // Lee el estado y descarta lo que no tenga forma valida: una fila mala no tumba la app.
@@ -76,6 +76,11 @@
         base.planes[c] = e.planes[c];
         if (!base.registro[c]) base.registro[c] = [];
         if (!base.ajustes[c]) base.ajustes[c] = [];
+      }
+    }
+    if (e.notas && typeof e.notas === 'object') {
+      for (var nn in e.notas) if (e.notas.hasOwnProperty(nn) && Array.isArray(e.notas[nn])) {
+        base.notas[nn] = e.notas[nn].filter(function (x) { return x && typeof x === 'object' && typeof x.texto === 'string'; }).slice(-60);
       }
     }
     if (e.perfiles && typeof e.perfiles === 'object') {
@@ -244,6 +249,43 @@ function planPorMeta(clave) {
 
 // Plan completo: perfil -> techo -> semanas con rampa, descarga, una calidad y la larga.
 // Se pide lo minimo para prescribir con criterio; lo que falte se dice, no se adivina.
+// Campo libre: el corredor cuenta lo que la app no sabe (futbol el jueves, lluvia, quiere un dia mas).
+// Se guarda por semana y el coach lo tiene que leer antes de decidir la siguiente.
+  var TIPOS_NOTA = ['evento', 'faltante', 'sobrecarga', 'otro'];
+
+  function notaValida(t) {
+    t = String(t == null ? '' : t).trim();
+    if (!t) return { ok: false, error: 'la nota esta vacia' };
+    return { ok: true, texto: t.slice(0, 500) };
+  }
+
+  // Interpreta el texto libre: que dia/semana y que implica, para no pedirle eso al coach por su cuenta.
+  function interpretarNota(texto) {
+    var t = ' ' + String(texto || '').toLowerCase() + ' ', out = { dias_bloqueados: [], quiere_mas_dias: null, motivo: '' };
+    var dias = { lunes: 1, martes: 2, miercoles: 3, 'miércoles': 3, jueves: 4, viernes: 5, sabado: 6, 'sábado': 6, domingo: 7 };
+    for (var k in dias) {
+      if (dias.hasOwnProperty(k) && t.indexOf(k) >= 0) out.dias_bloqueados.push(dias[k]);
+    }
+    if (/\b(lluvia|llover|tormenta|calor|frio|frío|nieve|aire|humo)\b/.test(t)) out.motivo = 'clima';
+    if (/\b(viaje|viajo|fuera|trabajo|turno|escuela)\b/.test(t)) out.motivo = out.motivo || 'agenda';
+    if (/\b(futbol|fútbol|tenis|basquet|basket|voleibol|natacion|natación|ciclismo|bici)\b/.test(t)) out.motivo = out.motivo || 'otro deporte';
+    if (/\b(enferm|gripe|fiebre|gastritis|dolor|lesion|lesión|molestia)\b/.test(t)) out.motivo = out.motivo || 'salud';
+    var mas = t.match(/\b(un|1)\s+(dia|día)\s+mas\b|\bcuarto dia\b|\botro dia\b|\bdia extra\b/);
+    if (mas) out.quiere_mas_dias = 1;
+    // si el motivo es clima o agenda, el dia nombrado es contexto: no se bloquea solo por nombrarlo
+    if (out.motivo === 'clima' || out.motivo === 'agenda') out.dias_contexto = out.dias_bloqueados.slice();
+    return out;
+  }
+
+  function notasDe(id) {
+    var e = cargar();
+    var arr = (e.notas && e.notas[id]) || [];
+    return arr.slice(-30).map(function (x) { return {
+      fecha: x.fecha, semana: x.semana, texto: x.texto, tipo: x.tipo,
+      dias_bloqueados: x.dias_bloqueados || [], quiere_mas_dias: x.quiere_mas_dias || null
+    }; });
+  }
+
 function preparar(clave, o) {
   var meta = planPorMeta(clave);
   if (!meta) return { ok: false, error: 'meta invalida: usa 5k, 10k, 21k, 42k o base', faltan: [], base: false };
@@ -624,6 +666,7 @@ function rellenar(plan, inicio) {
         kg: num(o.kg), cm: num(o.cm),
         carrera: o.carrera || null, meta: o.meta || null, notas: o.notas || /^\s*$/.test(String(o.molestias || '')) === false ? o.molestias : (o.notas || null),
         objetivo: objetivo, base: base,
+        dias: num(o.dias) ? Math.round(o.dias) : null, min: num(o.min) ? Math.round(o.min) : null,
         inicio: o.inicio || semanas[0] && semanas[0].fin ? (semanas[0].fecha || null) : null,
         semanas_total: semanas.length,
         semanas: semanas, km_declarado: total
@@ -864,6 +907,59 @@ function rellenar(plan, inicio) {
     },
 
     // Ajusta una fila del plan y deja la razon escrita: el plan cambia, el historial no se pierde.
+    // Campo libre del corredor: futbol el jueves, lluvia, quiere un dia mas.
+    nota: function (id, texto, tipo, semana) {
+      if (!idValido(id)) return { ok: false, error: 'atleta desconocido: ' + id };
+      var v = notaValida(texto);
+      if (!v.ok) return v;
+      var e = cargar();
+      if (!e.notas) e.notas = {};
+      if (!e.notas[id]) e.notas[id] = [];
+      var inf = interpretarNota(v.texto);
+      var reg = {
+        fecha: hoyISO(), semana: Number(semana) || semanaDe(hoyISO()),
+        texto: v.texto, tipo: (tipo && TIPOS_NOTA.indexOf(tipo) >= 0) ? tipo : 'otro',
+        dias_bloqueados: inf.dias_bloqueados, quiere_mas_dias: inf.quiere_mas_dias,
+        motivo: inf.motivo, creado: new Date().toISOString()
+      };
+      e.notas[id].push(reg);
+      if (e.notas[id].length > 60) e.notas[id] = e.notas[id].slice(-60);
+      guardar(e); avisar();
+      // lo que la app deduce sola, para que el coach no tenga que adivinarlo
+      var r = { ok: true, nota: reg, leida: inf };
+      if (reg.quiere_mas_dias) {
+        var a = atleta(id), d = Number(a.dias) || 0;
+        if (d >= 6) {
+          r.sugerencia = 'ya entrena 6 dias: no se sube mas; si pide otra sesion, se cambia calidad por volumen suave';
+        } else if (!d) {
+          r.sugerencia = 'no consta cuantos dias entrena: preguntale antes de sumar uno';
+        } else {
+          var n2 = d + 1;
+          r.sugerencia = 'la siguiente semana con ' + n2 + ' ' + (n2 === 1 ? 'dia' : 'dias') +
+            ' (traia ' + d + '): rearma con Agente.semilla({dias:' + n2 + '}) o reparte el volumen en ' + n2 + ' sesiones con Agente.guardarPlan';
+        }
+      }
+      if (reg.dias_bloqueados.length) {
+        r.sugerencia_dias = 'esos dias no se programan: mueve la sesion, no la borres';
+      }
+      return r;
+    },
+
+    leerNotas: function (id) {
+      if (!idValido(id)) return { ok: false, error: 'atleta desconocido: ' + id };
+      return { ok: true, notas: notasDe(id) };
+    },
+
+    borrarNota: function (id, fecha) {
+      if (!idValido(id)) return { ok: false, error: 'atleta desconocido: ' + id };
+      var e = cargar();
+      if (!e.notas || !e.notas[id]) return { ok: false, error: 'sin notas' };
+      var n0 = e.notas[id].length;
+      e.notas[id] = e.notas[id].filter(function (x) { return x.fecha !== fecha; });
+      guardar(e); avisar();
+      return { ok: n0 !== e.notas[id].length, quedan: e.notas[id].length };
+    },
+
     ajustarSemana: function (id, n, campos, razon) {
       if (!idValido(id)) return { ok: false, error: 'atleta desconocido: ' + id };
       n = Number(n);
@@ -1090,12 +1186,17 @@ function rellenar(plan, inicio) {
         '  Agente.sesionDeHoy("jonah")       -> { ok, semana, fila, pendientes[], sugerida }',
         '  Agente.ficha("jonah","larga")     -> { ok, titulo, resumen, pasos:[{k,v}], hecha, avisos[] }',
         '  Agente.balance("jonah")           -> { ok, kmHechos, pct, ritmo, deltaSeg, pendientes[], avisos[] }',
+        '  Agente.leerNotas("jonah")         -> { ok, notas:[{fecha,semana,texto,tipo,dias_bloqueados[],quiere_mas_dias}] }',
         '',
         'ESCRITURA',
         '  Agente.registrar("jonah", {fecha:"2026-11-11", tipo:"facil", km:4, min:32,',
         '                            fc_media:128, fc_max:140, esf:4, molestia:""})',
         '  Agente.borrar("jonah","2026-11-11","facil")',
         '  Agente.ajustarSemana("jonah", 5, {km:24}, "se subio por semana limpia")',
+        '  Agente.nota("jonah","El jueves juego futbol y el sabado llueve","evento")',
+        '     -> guarda lo que la app no sabe; devuelve { nota, leida:{dias_bloqueados,quiere_mas_dias,motivo}, sugerencia }',
+        '        OBLIGATORIO antes de mover una semana: leer notas() y respetar dias_bloqueados.',
+        '  Agente.borrarNota("jonah","2026-11-12")',
         '',
         'CORREDORES (cada quien con su plan)',
         '  Agente.corredores()               -> { ok, corredores:[{id,nombre,base,semanas,registros}] }',

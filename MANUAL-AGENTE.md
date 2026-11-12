@@ -191,6 +191,19 @@ Cada vez que hablen:
 3. `Agente.registrar(id, {...})` con lo que te diga.
 4. `Agente.balance(id)` → compara con el plan y dile en una frase cómo va.
 
+**Antes de tocar la semana, lee el campo libre del corredor:**
+
+```js
+Agente.leerNotas(id)
+// { ok:true, notas:[{fecha:"2026-11-12", semana:1, texto:"El jueves juego fútbol...",
+//   tipo:"evento", dias_bloqueados:[4], quiere_mas_dias:null}] }
+```
+
+Ahí escribe lo que la app no sabe: que el jueves juega fútbol, que va a llover, que quiere un día más.
+`dias_bloqueados` son días que **no** se programan (se mueve la sesión, no se borra).
+`quiere_mas_dias` viene con `sugerencia` ya calculada. Si el corredor te lo cuenta en el chat, guárdalo
+tú con `Agente.nota(id, "texto", "evento")` para que no se pierda.
+
 **Reglas de ajuste (de `running-coach`, consúltalas antes de cambiar nada):**
 
 - Semana al ≥95 % sin molestias → sube como estaba previsto.
@@ -207,6 +220,8 @@ Cada vez que hablen:
 - **El service worker sirve copia vieja.** Si un cambio no aparece: cerrar la app del todo y abrirla, o
   desregistrar el SW. No reescribas código que ya está bien.
 - **`localStorage` es por navegador y por teléfono.** Si el corredor cambia de celular, exporta antes.
+- **Ignorar las notas del corredor es el error más caro.** Si programaste el jueves y él juega fútbol,
+  el plan queda mal y la confianza también.
 - **No inventes ritmos.** El plan prescribe pulso y tiempo. Un ritmo en min/km solo sale de un registro
   real del corredor.
 - **No copies el plan de otro corredor.** `semilla()` existe justo para eso.

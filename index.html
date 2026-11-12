@@ -206,6 +206,24 @@
     </div>
 
     <div class="card">
+      <h2>Para tu coach</h2>
+      <p class="peq" style="margin:6px 0">Escribe lo que la app no sabe: «el jueves juego fútbol»,
+        «va a llover toda la semana», «quiero entrenar un día más». Queda guardado y el plan lo toma en cuenta.</p>
+      <textarea id="ntTexto" rows="3" maxlength="500" placeholder="El jueves juego fútbol con los del trabajo y el sábado no voy a poder salir"></textarea>
+      <div class="fila" style="margin-top:8px">
+        <select id="ntTipo">
+          <option value="evento">Algo que va a pasar</option>
+          <option value="faltante">Un día que no puedo</option>
+          <option value="sobrecarga">Me siento cansado o con molestia</option>
+          <option value="otro">Otra cosa</option>
+        </select>
+        <button class="bt pri" id="ntGuardar">Guardar nota</button>
+      </div>
+      <p class="peq" id="ntAviso"></p>
+      <div id="ntLista"></div>
+    </div>
+
+    <div class="card">
       <h2>Zonas de <span id="hNombre">–</span> · FC máx <span id="hFcmax">–</span></h2>
       <div class="zona" id="hZonas"></div>
       <p class="peq" id="hZonaNota">En subida manda el pulso: si se pasa del techo, se camina.</p>
@@ -527,8 +545,47 @@
     });
   }
 
+  // Campo libre: lo que el corredor escribe y el coach tiene que leer antes de mover la semana.
+  function pintarNotas() {
+    var r = A.leerNotas(atleta);
+    var lista = (r && r.ok) ? r.notas.slice().reverse() : [];
+    var box = $('#ntLista');
+    if (!box) return;
+    if (!lista.length) { box.innerHTML = '<p class="peq">Sin notas todavía.</p>'; return; }
+    box.innerHTML = lista.slice(0, 5).map(function (n) {
+      var d = n.dias_bloqueados && n.dias_bloqueados.length
+        ? ' · no entrena: ' + n.dias_bloqueados.map(function (i) { return ['lun','mar','mié','jue','vie','sáb','dom'][i - 1]; }).join(', ')
+        : '';
+      return '<div class="sesion" style="margin-top:6px">' +
+             '<div class="t">' + esc(n.fecha.split('-').reverse().join('/')) + ' · semana ' + esc(n.semana) +
+             '<button class="bt mini" data-borranota="' + esc(n.fecha) + '">Quitar</button></div>' +
+             '<div class="d">' + esc(n.texto) + d + '</div></div>';
+    }).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('[data-borranota]'), function (b2) {
+      b2.onclick = function () {
+        A.borrarNota(atleta, b2.dataset.borranota);
+        $('#ntAviso').textContent = 'Nota quitada.';
+        pintarNotas();
+      };
+    });
+  }
+
+  function guardarNotaUI() {
+    var t = $('#ntTexto').value.trim();
+    if (!t) { $('#ntAviso').textContent = 'Escribe algo primero.'; return; }
+    var r = A.nota(atleta, t, $('#ntTipo').value);
+    if (!r.ok) { $('#ntAviso').textContent = r.error; return; }
+    $('#ntTexto').value = '';
+    var av = 'Guardada. Tu coach la va a leer antes de mover la semana.';
+    if (r.sugerencia) av += ' ' + r.sugerencia;
+    else if (r.nota.dias_bloqueados.length) av += ' Esos días no se programan.';
+    $('#ntAviso').textContent = av;
+    pintarNotas();
+  }
+
   function pintarHoy() {
     pintarDias();
+    pintarNotas();
     var d = A.leer(atleta), h = A.sesionDeHoy(atleta, diaActivo()), f = h.fila;
     $('#hNombre').textContent = d.atleta.nombre;
     $('#hFcmax').textContent = d.atleta.fcmax;
@@ -842,6 +899,7 @@
 
   function pintarTodo() {
     pintarAtletas(); pintarHoy(); pintarPlan(); pintarReg(); pintarAgente();
+    if ($('#ntGuardar')) $('#ntGuardar').onclick = guardarNotaUI;
     Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) {
       b.classList.toggle('on', b.dataset.v === vista);
     });
