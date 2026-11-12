@@ -1085,7 +1085,7 @@ function rellenar(plan, inicio) {
         '',
         'LECTURA',
         '  Agente.atletas()                  -> { ok, atletas:[{id,nombre,fcmax}] }',
-        '  Agente.leer("jonah")              -> { ok, atleta, semanas[21], registro[], ajustes[] }',
+        '  Agente.leer("jonah")              -> { ok, atleta, semanas[N], registro[], ajustes[] }',
         '  Agente.zonas("jonah")             -> { ok, fcmax, zonas:{Z1:[lo,hi],...} }',
         '  Agente.sesionDeHoy("jonah")       -> { ok, semana, fila, pendientes[], sugerida }',
         '  Agente.ficha("jonah","larga")     -> { ok, titulo, resumen, pasos:[{k,v}], hecha, avisos[] }',
@@ -1099,9 +1099,14 @@ function rellenar(plan, inicio) {
         '',
         'CORREDORES (cada quien con su plan)',
         '  Agente.corredores()               -> { ok, corredores:[{id,nombre,base,semanas,registros}] }',
-        '  Agente.crearCorredor({nombre:"Ana", fcmax:190, copiarDe:"jonah"})',
-        '    -> da de alta un plan propio de 21 semanas; copiarDe puede ser jonah, yuli u otro',
-        '  Agente.guardarPlan("ana", semanas)  -> guarda sus 21 semanas',
+        '  Agente.semilla(o)                 -> arma un plan NUEVO desde los datos, sin copiar a nadie:',
+        '    o = {nombre, objetivo:"5k|10k|21k|42k|base", inicio:"AAAA-MM-DD", edad, kg, cm, fcmax,',
+        '         fc_reposo, dias:3, min:45, corre20:true, historial:"algo|poco|ninguno", molestias:""}',
+        '    -> { ok, id, objetivo, inicio, semanas_total, km_declarado, imc, nivel, plan }',
+        '       o { ok:false, error, faltan:[...] }  (lo que falta se dice, no se adivina)',
+        '  Agente.crearCorredor({...o})      -> lo mismo que semilla, ya guardado en localStorage',
+        '  Agente.objetivos()                -> { ok, metas:[{clave,km,semanas,dias,largaMax,nota}] }',
+        '  Agente.guardarPlan("ana", semanas)  -> reemplaza el plan completo de un corredor propio',
         '  Agente.borrarCorredor("ana")        -> solo para corredores propios, no la plantilla',
         '',
         'PERFIL (para usar la app con otra persona)',
@@ -1134,6 +1139,15 @@ function rellenar(plan, inicio) {
     //   - el techo lo pone el punto de partida (IMC, historial, nivel de partida), no la meta que elige;
     //   - sin historial: no se le manda a la calle sin antes poder correr 20 min seguido.
     // Nada de esto adivina un ritmo: se prescribe por zona de FC + tiempo.
+    // Que metas ofrece la app, para que un agente ajeno sepa que puede pedirle al corredor.
+    objetivos: function () {
+      return { ok: true, metas: Object.keys(METAS).map(function (k) {
+        var m = METAS[k];
+        return { clave: m.clave, nombre: m.nombre, km: m.km, semanas: m.semanas,
+                 dias: m.dias, largaMax: m.largaMax || null };
+      }) };
+    },
+
     semilla: function (o) {
       o = o || {};
       var meta = String(o.objetivo || o.meta || '').trim();

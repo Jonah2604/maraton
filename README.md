@@ -61,8 +61,13 @@ módulo y el agente ya tiene el plan en la mano.
 
 ### Pasarle la app a otra persona
 
-Se cambia el nombre y la FC máxima: las cinco zonas se recalculan solas.
-`Reiniciar` deja el lugar en blanco para que otro empiece de cero.
+Cada corredor tiene su propio plan, armado desde sus datos y su meta (5k, 10k, medio, maratón o base).
+En **⚙ Ajustes → Agregar otro corredor** se llenan sus datos y la app arma el plan; no se copia el de otro.
+
+Para un agente externo que quiera llevar el plan:
+
+- Manual completo: **[MANUAL-AGENTE.md](MANUAL-AGENTE.md)** — qué preguntar, cómo armar el plan, contrato de datos, reglas de ajuste y trampas.
+- `Agente.objetivos()` lista las metas disponibles; `Agente.semilla(o)` arma el plan sin guardarlo.
 
 ## Zonas (manda el pulso, el ritmo es referencia)
 
