@@ -1178,6 +1178,8 @@
     fc: ['average heart rate', 'avg hr', 'average_hr', 'fc media', 'pulso medio', 'average hr',
          'frecuencia cardiaca media', 'heart rate'],
     fc_max: ['max heart rate', 'max hr', 'fc maxima', 'fc máxima', 'pulso maximo'],
+    temp: ['temperatura media', 'average temperature', 'temp', 'temperatura', 'temperature',
+           'avg temp', 'weather temperature'],
     esf: ['effort', 'esfuerzo', 'perceived exertion', 'perceived effort'],
     notas: ['notes', 'notas', 'name', 'nombre', 'title', 'actividad']
   };
@@ -1218,7 +1220,7 @@
       return k === 'fecha' ? adivinarFecha(cab, filas) : adivinar(k, cab);
     }
     var iF = campo('fecha'), iK = campo('km'), iM = campo('min'), iT = campo('tipo'),
-        iH = campo('fc'), iX = campo('fc_max'), iE = campo('esf');
+        iH = campo('fc'), iX = campo('fc_max'), iE = campo('esf'), iW = campo('temp');
     if (iF < 0) {
       return { error: 'No reconocí la columna de fecha. Dime cuál es.', falta: 'fecha',
                cabeceras: campoCSV(lineas[0]), muestra: filas.slice(0, 3), total: filas.length,
@@ -1245,12 +1247,16 @@
       if (!isFinite(fc) || fc < 30 || fc > 230) fc = null;
       if (!isFinite(fcm) || fcm < 30 || fcm > 230) fcm = null;
       if (!isFinite(esf) || esf < 1 || esf > 10) esf = null;
+      // Garmin deja "--" cuando no hay lectura; se descarta
+      var temp = iW >= 0 ? Number(String(c[iW]).replace(/[^0-9.-]/g, '')) : NaN;
+      if (!isFinite(temp) || temp < -20 || temp > 55) temp = null;
       if (!km && !min) { sinDatos++; continue; }
       // A.registrar valida cada campo que reciba: si no hay dato, se omite la llave
       var act = { fecha: fecha, tipo: tipo, km: km, min: min };
       if (fc !== null) act.fc_media = fc;
       if (fcm !== null) act.fc_max = fcm;
       if (esf !== null) act.esf = esf;
+      if (temp !== null) act.temp = temp;
       var res = guardarActividad(act, false);
       if (res.ok) hechas++;
       else { rechazos.push(fecha + ': ' + res.error); }
@@ -1294,8 +1300,13 @@
   function guardarActividad(r, manual) {
     var dup = A.leer(atleta).registro.some(function (s) { return s.fecha === r.fecha && s.tipo === r.tipo; });
     if (dup && !manual) return { ok: false, error: 'Ese dia ya tiene una sesion de ' + r.tipo };
-    return A.registrar(atleta, { fecha: r.fecha, tipo: r.tipo, km: r.km, min: r.min,
-      fc_media: r.fc_media, fc_max: r.fc_max, zona: r.zona });
+    var s = { fecha: r.fecha, tipo: r.tipo, km: r.km, min: r.min };
+    if (r.fc_media !== undefined && r.fc_media !== null) s.fc_media = r.fc_media;
+    if (r.fc_max !== undefined && r.fc_max !== null) s.fc_max = r.fc_max;
+    if (r.esf !== undefined && r.esf !== null) s.esf = r.esf;
+    if (r.temp !== undefined && r.temp !== null) s.temp = r.temp;
+    if (r.zona) s.zona = r.zona;
+    return A.registrar(atleta, s);
   }
   function importarActividad(txt, nombre) {
     var x = /<\?xml/i.test(txt.slice(0, 200));

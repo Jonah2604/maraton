@@ -83,7 +83,18 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
     techo = TECHOS.get(aid, 140)
 
     faciles = [r for r in esta if r.get("tipo") == "facil" and r.get("fc_media")]
-    fc_alta = [r for r in faciles if float(r["fc_media"]) > techo]
+
+    # Con calor el pulso sube sin que el corredor vaya mas rapido: se sube el techo 1 ppm por
+    # grado arriba de 22, hasta +8. Sin ese ajuste el coach regana a quien corrio a 30 grados.
+    def techo_de(r):
+        try:
+            t = float(r.get("temp"))
+        except (TypeError, ValueError):
+            return techo
+        return techo + int(max(0, min(8, round(t - 22))))
+
+    fc_alta = [r for r in faciles if float(r["fc_media"]) > techo_de(r)]
+    calurosas = [r for r in esta if r.get("temp") is not None and float(r["temp"] or 0) >= 27]
     molestias = [r for r in esta if (r.get("molestia") or "").strip()]
     graves = [r for r in molestias
               if any(p in (r.get("molestia") or "").lower() for p in PALABRA_RIESGO)]
@@ -108,9 +119,18 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
     elif pct < 95:
         decision = "repetir"
         banderas.append(f"cumpliste {pct}% del plan")
+    if calurosas:
+        banderas.append("sesion(es) con calor ("
+                        + ", ".join(f"{r['fecha']} {int(float(r['temp']))} grados" for r in calurosas[:4])
+                        + "): el pulso alto ahi no cuenta como ir rapido")
     if fc_alta:
-        banderas.append(f"{len(fc_alta)} facil(es) con FC media sobre el techo de Z2 ({techo}): "
-                        + ", ".join(f"{r['fecha']} {int(r['fc_media'])}" for r in fc_alta))
+        # se dice el techo que se uso en cada una: con calor sube, y el corredor tiene que verlo
+        det = []
+        for r in fc_alta:
+            t = techo_de(r)
+            extra = f" a {int(float(r['temp']))} C" if t > techo else ""
+            det.append(f"{r['fecha']} {int(r['fc_media'])} (techo {t}{extra})")
+        banderas.append(f"{len(fc_alta)} facil(es) con FC media sobre el techo de Z2: " + ", ".join(det))
         if decision == "seguir":
             decision = "repetir"
     if esf_max >= 9:
@@ -144,7 +164,9 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
 
     return {"atleta": aid, "semana": n, "fechas": sem.get("fechas"), "plan": sem, "hecho": esta,
             "km": km, "km_prev": km_prev, "pct": pct, "faltan": faltan,
-            "fc_alta": [r["fecha"] for r in fc_alta], "molestias": [r.get("molestia") for r in molestias],
+            "fc_alta": [r["fecha"] for r in fc_alta],
+            "calurosas": [{"fecha": r["fecha"], "temp": r["temp"]} for r in calurosas],
+            "molestias": [r.get("molestia") for r in molestias],
             "banderas": banderas, "decision": decision, "cambios": cambios,
             "siguiente": sig.get("n") if sig else None}
 
@@ -157,13 +179,15 @@ def texto(r):
              (f", semana previa {r['km_prev']} km" if r["km_prev"] else ""))
     L.append("")
     if r["hecho"]:
-        L.append("| Fecha | Tipo | Km | Min | Ritmo | FC media/max | Zona | Esf | Molestia |")
-        L.append("|---|---|---|---|---|---|---|---|---|")
+        L.append("| Fecha | Tipo | Km | Min | Ritmo | FC media/max | Zona | Temp | Esf | Molestia |")
+        L.append("|---|---|---|---|---|---|---|---|---|---|")
         for s in r["hecho"]:
+            temp = s.get("temp")
+            temp = f"{int(float(temp))} C" if temp not in (None, "") else "—"
             L.append(f"| {s['fecha']} | {s.get('tipo')} | {s.get('km')} | {s.get('min')} | "
                      f"{ritmo(float(s.get('min') or 0), float(s.get('km') or 0))} | "
                      f"{s.get('fc_media') or '—'}/{s.get('fc_max') or '—'} | {s.get('zona') or '—'} | "
-                     f"{s.get('esf') or '—'} | {(s.get('molestia') or '').strip() or '—'} |")
+                     f"{temp} | {s.get('esf') or '—'} | {(s.get('molestia') or '').strip() or '—'} |")
     else:
         L.append("Sin sesiones registradas esta semana.")
     L += ["", f"**Decision: {r['decision']}**"]

@@ -214,6 +214,17 @@ tú con `Agente.nota(id, "texto", "evento")` para que no se pierda.
 
 ---
 
+## 6.1 Temperatura: no culpes al corredor del calor
+
+El CSV por actividad de Garmin trae la columna **`Temperatura media`** (la lista resumida de Progreso **no** la trae).
+La app la guarda en `temp` al importar y la muestra en la ficha. Antes de calificar una sesión de rápida:
+
+- **A partir de 27 grados el pulso sube solo.** Sube el techo de Z2 un grado por grado arriba de 22 (máximo +8).
+  A 31 grados un techo de 134 pasa a 142: ese pulso alto no es falta de control.
+- **Si no hay temperatura, no la inventes.** Se dice «sin dato de temperatura» y se califica con lo que hay.
+- **El pronóstico no se consulta para armar la semana.** El clima entra por el campo libre del corredor
+  (`Agente.leerNotas`), no por una API.
+
 ## 7. Trampas conocidas (no las repitas)
 
 - **`cargar()` exige al menos 4 semanas.** Un plan de 16 funciona; uno inventado de 2 se descarta.

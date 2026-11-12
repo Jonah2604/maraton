@@ -825,7 +825,8 @@ function rellenar(plan, inicio) {
         var k = Number(r.km) || 0, m = Number(r.min) || 0;
         return { fecha: r.fecha, tipo: r.tipo, km: k, min: m, ritmo: k > 0 && m > 0 ? m / k : null,
                  fc_media: r.fc_media == null ? null : Number(r.fc_media),
-                 fc_max: r.fc_max == null ? null : Number(r.fc_max), zona: r.zona || '' };
+                 fc_max: r.fc_max == null ? null : Number(r.fc_max), zona: r.zona || '',
+                 temp: r.temp == null || r.temp === '' ? null : Number(r.temp) };
       }
       var esta = reg.filter(function (r) { return semanaDe(r.fecha) === n; }).map(norm);
       var prev = reg.filter(function (r) { return semanaDe(r.fecha) === n - 1; }).map(norm);
@@ -870,12 +871,15 @@ function rellenar(plan, inicio) {
       var fcm = s.fc_media === undefined || s.fc_media === '' ? null : Number(s.fc_media);
       var fcx = s.fc_max === undefined || s.fc_max === '' ? null : Number(s.fc_max);
       var esf = s.esf === undefined || s.esf === '' ? null : Number(s.esf);
+      // temperatura del dia (Garmin la trae por actividad): sirve para leer el pulso sin culpar al corredor
+      var temp = s.temp === undefined || s.temp === null || s.temp === '' ? null : Number(s.temp);
       if (km !== null && (!isFinite(km) || km < 0 || km > 120)) return { ok: false, error: 'km fuera de rango (0-120)' };
       if (min !== null && (!isFinite(min) || min <= 0 || min > 1440)) return { ok: false, error: 'min fuera de rango (1-1440)' };
       if (fcm !== null && (!isFinite(fcm) || fcm < 30 || fcm > 230)) return { ok: false, error: 'fc_media fuera de rango (30-230)' };
       if (fcx !== null && (!isFinite(fcx) || fcx < 30 || fcx > 230)) return { ok: false, error: 'fc_max fuera de rango (30-230)' };
       if (fcm !== null && fcx !== null && fcx < fcm) return { ok: false, error: 'fc_max no puede ser menor que fc_media' };
       if (esf !== null && (!isFinite(esf) || esf < 1 || esf > 10)) return { ok: false, error: 'esfuerzo fuera de rango (1-10)' };
+      if (temp !== null && (!isFinite(temp) || temp < -20 || temp > 55)) return { ok: false, error: 'temperatura fuera de rango (-20 a 55)' };
 
       var e = cargar();
       var dup = e.registro[id].some(function (r) { return r.fecha === fecha && r.tipo === tipo; });
@@ -885,7 +889,7 @@ function rellenar(plan, inicio) {
         fecha: fecha, tipo: tipo, km: km, min: min,
         fc_media: fcm, fc_max: fcx,
         zona: s.zona || zonaDe(id, fcm),
-        esf: esf, molestia: String(s.molestia || '').slice(0, 300),
+        esf: esf, temp: temp, molestia: String(s.molestia || '').slice(0, 300),
         nota: String(s.nota || '').slice(0, 500),
         semana: semanaDe(fecha),
         creado: new Date().toISOString()
@@ -1136,7 +1140,13 @@ function rellenar(plan, inicio) {
         var kmH = Number(hecha.km) || 0, minH = Number(hecha.min) || 0;
         avisos.push('Ya registrada el ' + hecha.fecha + ': ' + (kmH ? kmH + ' km' : '') +
           (minH ? (kmH ? ' en ' : '') + minH + ' min' : '') +
-          (hecha.fc_media ? ' · FC media ' + hecha.fc_media : '') + '.');
+          (hecha.fc_media ? ' · FC media ' + hecha.fc_media : '') +
+          (hecha.temp !== null && hecha.temp !== undefined ? ' · ' + Math.round(hecha.temp) + ' °C' : '') + '.');
+        // Con calor el pulso sube sin correr mas rapido: se dice, no se regaña.
+        if (hecha.temp !== null && hecha.temp !== undefined && hecha.temp >= 27 && hecha.fc_media) {
+          avisos.push('A ' + Math.round(hecha.temp) + ' °C el pulso sube solo: ese ' + hecha.fc_media +
+            ' no significa que ibas rápido.');
+        }
         if (tipo === 'larga' && kmH && Math.abs(kmH - f.larga) >= 0.5) {
           avisos.push(kmH > f.larga ? 'Salieron ' + (Math.round((kmH - f.larga) * 10) / 10) +
             ' km de más: la siguiente no sube.' : 'Faltaron ' + (Math.round((f.larga - kmH) * 10) / 10) +
