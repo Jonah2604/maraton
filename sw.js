@@ -2,7 +2,7 @@
    - Navegacion y HTML: red primero (asi una actualizacion entra sola), cache si no hay red.
    - Resto de archivos propios: red primero (asi un cambio de agente.js entra solo); cache si no hay red.
    Al cambiar de version sube VERSION: el cache viejo se borra solo. */
-var VERSION = 'maraton-v4';
+var VERSION = 'maraton-v5';
 var PROPIOS = [
   './',
   './index.html',
@@ -10,7 +10,8 @@ var PROPIOS = [
   './manifest.webmanifest',
   './icon-192.png',
   './icon-512.png',
-  './icon-mask.png'
+  './icon-mask.png',
+  './logo-cabeza.png'
 ];
 
 self.addEventListener('install', function (e) {
