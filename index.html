@@ -12,6 +12,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
+  .mapa{width:100%;border-collapse:collapse;margin-top:8px}
+  .mapa th,.mapa td{padding:4px 6px;text-align:left;font-size:12px;border-bottom:1px solid rgba(255,255,255,.12)}
+  .mapa select,.mapa input{width:100%;font-size:12px;padding:4px}
+
   :root{
     /* tema jabalí: rojo ladrillo, crema y negro del escudo */
     --fondo:#100c0c; --panel:#1a1414; --panel2:#241b1a; --linea:#3a2b28;
@@ -251,6 +255,11 @@
         </span></div>
       <input type="file" id="fAct" accept=".tcx,.gpx,.csv,.fit" style="display:none">
       <div class="chips" id="iPrev" style="margin-top:8px"></div>
+      <div id="iMapa"></div>
+      <div class="fila" style="margin-top:6px;gap:6px">
+        <button class="bt mini" id="bManual">✎ Anotar a mano</button>
+      </div>
+
       <div id="rLista" style="margin-top:10px"></div>
     </div>
     <div class="card">
@@ -900,6 +909,7 @@
   function pintarTodo() {
     pintarAtletas(); pintarHoy(); pintarPlan(); pintarReg(); pintarAgente();
     if ($('#ntGuardar')) $('#ntGuardar').onclick = guardarNotaUI;
+    if ($('#bManual')) $('#bManual').onclick = function () { abrirRegistro('facil'); };
     Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) {
       b.classList.toggle('on', b.dataset.v === vista);
     });
@@ -1096,27 +1106,41 @@
     else if (t1.length) min = Math.round((new Date(t1[t1.length - 1].textContent) - new Date(t1[0].textContent)) / 60000);
     return { fecha: fecha, km: acum || null, min: min, fc: fcDePuntos(pts) };
   }
-  // "Nov 9, 2026, 6:40:12 AM" (Strava) | "9/11/2026 6:40" | "2026-11-09 06:40" | epoch en ms
+  // Casi cualquier fecha que salga de un reloj: "Nov 9, 2026, 6:40:12 AM" (Strava), "9/11/2026",
+  // "2026-11-09 06:40", "09.11.2026", "11-09-26", epoch en s o ms.
   var MESES = { jan:'01', feb:'02', mar:'03', apr:'04', may:'05', jun:'06', jul:'07', aug:'08', sep:'09',
                 oct:'10', nov:'11', dec:'12', ene:'01', abr:'04', ago:'08', dic:'12' };
   function fechaDeCSV(txt) {
     txt = String(txt || '').replace(/"/g, '').trim();
+    if (!txt) return null;
     var m = isoUTC(txt);
     if (m) return m;
-    m = /^([A-Za-z]{3})[a-z]*\s+(\d{1,2}),?\s+(\d{4})/.exec(txt);
-    if (m && MESES[m[1].toLowerCase()]) {
-      var d = m[2].length < 2 ? '0' + m[2] : m[2];
-      return m[3] + '-' + MESES[m[1].toLowerCase()] + '-' + d;
+    // Nov 9, 2026 / 9 nov 2026 / 9 de noviembre de 2026
+    m = /^([A-Za-z]{3,})[a-zé]*\.?\s+(\d{1,2}),?\s+(\d{4})/.exec(txt);
+    if (m && MESES[m[1].toLowerCase().slice(0, 3)]) {
+      return m[3] + '-' + MESES[m[1].toLowerCase().slice(0, 3)] + '-' + (m[2].length < 2 ? '0' + m[2] : m[2]);
     }
-    m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(txt);
-    if (m) {   // formato de EE. UU. (Strava exporta asi): mes/dia/año
-      var mes = Number(m[1]), dia = Number(m[2]);
-      if (mes > 12 && dia <= 12) { var t2 = mes; mes = dia; dia = t2; }
-      return m[3] + '-' + (mes < 10 ? '0' : '') + mes + '-' + (dia < 10 ? '0' : '') + dia;
+    m = /^(\d{1,2})\s+(?:de\s+)?([A-Za-z]{3,})[a-zé]*\.?,?\s+(?:de\s+)?(\d{4})/.exec(txt);
+    if (m && MESES[m[2].toLowerCase().slice(0, 3)]) {
+      return m[3] + '-' + MESES[m[2].toLowerCase().slice(0, 3)] + '-' + (m[1].length < 2 ? '0' + m[1] : m[1]);
+    }
+    // 9/11/2026, 09.11.2026, 9-11-26
+    m = /^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/.exec(txt);
+    if (m) {
+      var a = Number(m[1]), b = Number(m[2]), y = m[3];
+      if (y.length === 2) y = String(2000 + Number(y));
+      // En Mexico se escribe dia/mes. Solo se toma mes/dia cuando el primer numero
+      // no puede ser dia (>12, formato gringo 11/25) o cuando el segundo >12.
+      var mes = a, dia = b;
+      if (a <= 12 && b <= 12) { mes = b; dia = a; }          // 10/11 -> 10 de noviembre
+      else if (a > 12 && b <= 12) { mes = b; dia = a; }      // 25/11 -> dia primero
+      else if (a <= 12 && b > 12) { mes = a; dia = b; }      // 11/25 -> mes primero
+      if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
+      return y + '-' + (mes < 10 ? '0' : '') + mes + '-' + (dia < 10 ? '0' : '') + dia;
     }
     if (/^\d{10,13}$/.test(txt)) {
       var e = new Date(Number(txt) * (txt.length > 10 ? 1 : 1000));
-      return A.iso(e);
+      return isNaN(e.getTime()) ? null : A.iso(e);
     }
     return null;
   }
@@ -1143,41 +1167,109 @@
     out.push(act);
     return out.map(function (c) { return c.trim(); });
   }
-  function leerCSV(txt) {
-    var lineas = txt.split(/\r?\n/).filter(function (l) { return l.trim(); });
-    if (lineas.length < 2) return { error: 'El CSV esta vacio' };
-    var cab = campoCSV(lineas[0]).map(function (c) { return c.toLowerCase(); });
-    function col() {
-      for (var i = 0; i < arguments.length; i++) {
-        var j = cab.indexOf(arguments[i]);
-        if (j >= 0) return j;
-      }
-      return -1;
+  // Cabeceras de fecha que se reconocen solas. Si no aparece ninguna, se abre el mapeo.
+  var ALIAS = {
+    fecha: ['activity date', 'date', 'fecha', 'fecha de inicio', 'start time', 'start date', 'when',
+            'timestamp', 'time', 'dia', 'día', 'date/time', 'data'],
+    km: ['distance', 'distancia', 'distancia (km)', 'distancia (m)', 'km', 'kilometers', 'distance (km)'],
+    min: ['moving time', 'elapsed time', 'time', 'tiempo', 'duracion', 'duración', 'duration',
+          'minutos', 'minutes', 'tiempo en movimiento', 'moving time (s)'],
+    tipo: ['activity type', 'type', 'tipo', 'actividad', 'sport', 'deporte'],
+    fc: ['average heart rate', 'avg hr', 'average_hr', 'fc media', 'pulso medio', 'average hr',
+         'frecuencia cardiaca media', 'heart rate'],
+    fc_max: ['max heart rate', 'max hr', 'fc maxima', 'fc máxima', 'pulso maximo'],
+    esf: ['effort', 'esfuerzo', 'perceived exertion', 'perceived effort'],
+    notas: ['notes', 'notas', 'name', 'nombre', 'title', 'actividad']
+  };
+  function sinTildes(t) {
+    return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  }
+  // Nombre del campo que mejor le queda a una cabecera. -1 si no se reconoce.
+  function adivinar(campo, cab) {
+    var als = ALIAS[campo] || [], i, j;
+    for (i = 0; i < als.length; i++) {
+      j = cab.indexOf(sinTildes(als[i]));
+      if (j >= 0) return j;
     }
-    var iF = col('activity date', 'date', 'fecha'), iT = col('activity type', 'type', 'tipo');
-    var iK = col('distance', 'distancia'), iM = col('moving time', 'elapsed time', 'time', 'tiempo');
-    var iH = col('average heart rate', 'avg hr', 'average_hr', 'fc media');
-    if (iF < 0) return { error: 'No encontre la columna de fecha (export de Strava o Garmin)' };
-    var hechas = 0, vistas = 0;
-    for (var i = 1; i < lineas.length; i++) {
-      var c = campoCSV(lineas[i]);
+    if (campo === 'fc') {
+      for (i = 0; i < cab.length; i++) if (/heart rate|pulso/.test(cab[i]) && !/max/.test(cab[i])) return i;
+    }
+    return -1;
+  }
+  function adivinarFecha(cab, filas) {
+    var i = adivinar('fecha', cab);
+    if (i >= 0) return i;
+    // ultima pasada: la primera columna cuyo primer valor se deja leer como fecha
+    for (var j = 0; j < cab.length && j < 4; j++) {
+      if (filas[0] && fechaDeCSV(filas[0][j])) return j;
+    }
+    return -1;
+  }
+  // Lee el CSV. Si no reconoce la fecha, NO falla: devuelve el mapeo para que se elija a mano.
+  function leerCSV(txt, mapa) {
+    var lineas = txt.split(/\r?\n/).filter(function (l) { return l.trim(); });
+    if (lineas.length < 2) return { error: 'El CSV esta vacio o trae una sola linea' };
+    var cab = campoCSV(lineas[0]).map(sinTildes);
+    var filas = [];
+    for (var i = 1; i < lineas.length; i++) filas.push(campoCSV(lineas[i]));
+    mapa = mapa || {};
+    function campo(k) {
+      if (mapa[k] !== undefined) return Number(mapa[k]);
+      return k === 'fecha' ? adivinarFecha(cab, filas) : adivinar(k, cab);
+    }
+    var iF = campo('fecha'), iK = campo('km'), iM = campo('min'), iT = campo('tipo'),
+        iH = campo('fc'), iX = campo('fc_max'), iE = campo('esf');
+    if (iF < 0) {
+      return { error: 'No reconocí la columna de fecha. Dime cuál es.', falta: 'fecha',
+               cabeceras: campoCSV(lineas[0]), muestra: filas.slice(0, 3), total: filas.length,
+               mapeo: { km: iK, min: iM, tipo: iT, fc: iH } };
+    }
+    var hechas = 0, vistas = 0, sinDatos = 0, rechazos = [];
+    for (var f = 0; f < filas.length; f++) {
+      var c = filas[f];
       var fecha = fechaDeCSV(c[iF]);
       if (!fecha) continue;
       vistas++;
       var tipo = 'facil';
-      if (iT >= 0) {
-        var t = c[iT].toLowerCase();
+      if (iT >= 0 && c[iT]) {
+        var t = sinTildes(c[iT]);
         if (/run|corre|trail/.test(t)) tipo = 'facil';
-        else if (/ride|bici|walk|caminata|swim|nada/.test(t)) continue;
+        else if (/ride|bici|walk|caminata|swim|nada|hike|sender/.test(t)) continue;
       }
       var km = iK >= 0 ? distanciaKm(c[iK]) : null;
-      var min = iM >= 0 ? Math.round(Number(String(c[iM]).replace(/[^0-9.]/g, '')) / 60) : null;
-      var fc = iH >= 0 ? Number(String(c[iH]).replace(/"/g, '')) : null;
-      if (!km) continue;
-      if (guardarActividad({ fecha: fecha, tipo: tipo, km: km, min: min,
-        fc_media: fc, fc_max: null }, false).ok) hechas++;
+      var min = iM >= 0 ? minutosDeCSV(c[iM]) : null;
+      var fc = iH >= 0 ? Number(String(c[iH]).replace(/[^0-9.]/g, '')) : NaN;
+      var fcm = iX >= 0 ? Number(String(c[iX]).replace(/[^0-9.]/g, '')) : NaN;
+      var esf = iE >= 0 ? Number(String(c[iE]).replace(/[^0-9.]/g, '')) : NaN;
+      // sin columna (o con celda vacia) se guarda null, no NaN: el validador rechaza null lo mismo que basura
+      if (!isFinite(fc) || fc < 30 || fc > 230) fc = null;
+      if (!isFinite(fcm) || fcm < 30 || fcm > 230) fcm = null;
+      if (!isFinite(esf) || esf < 1 || esf > 10) esf = null;
+      if (!km && !min) { sinDatos++; continue; }
+      // A.registrar valida cada campo que reciba: si no hay dato, se omite la llave
+      var act = { fecha: fecha, tipo: tipo, km: km, min: min };
+      if (fc !== null) act.fc_media = fc;
+      if (fcm !== null) act.fc_max = fcm;
+      if (esf !== null) act.esf = esf;
+      var res = guardarActividad(act, false);
+      if (res.ok) hechas++;
+      else { rechazos.push(fecha + ': ' + res.error); }
     }
-    return { ok: true, km: null, min: null, fc: null, hechas: hechas, vistas: vistas };
+    return { ok: true, km: null, min: null, fc: null, hechas: hechas, vistas: vistas,
+             sinDatos: sinDatos, rechazos: rechazos.slice(0, 3),
+             cabeceras: campoCSV(lineas[0]), mapeo: { fecha: iF, km: iK, min: iM, tipo: iT, fc: iH } };
+  }
+  // "45:30", "45:30:00", "2730" (segundos de Strava), "45 min", "1.5 h"
+  function minutosDeCSV(v) {
+    var t = String(v || '').replace(/"/g, '').trim();
+    if (!t) return null;
+    var m = /^(\d+):(\d{1,2})(?::(\d{1,2}))?$/.exec(t);
+    if (m) return Math.round(Number(m[1]) + Number(m[2]) / 60 + (m[3] ? Number(m[3]) / 3600 : 0));
+    var n = Number(t.replace(/[^0-9.]/g, ''));
+    if (!isFinite(n) || n <= 0) return null;
+    if (/h\b|hr|hora/.test(t)) return Math.round(n * 60);
+    if (/min/.test(t)) return Math.round(n);
+    return Math.round(n / 60);   // Strava exporta segundos
   }
 
   // El archivo no dice si fue calidad, larga o facil: lo elige quien importa antes de guardar.
@@ -1217,15 +1309,67 @@
     r.zona = rangoZona(r.fc && r.fc.media);
     return r;
   }
+  // Si el CSV no trae fecha reconocible, se elige la columna a mano. En cuanto hay fecha, se importa.
+  var csvActual = null;
+  function pintarMapaCSV(r) {
+    var box = $('#iMapa');
+    if (!box) return;
+    if (!r || !r.alta) { box.innerHTML = ''; return; }
+    csvActual = r;
+    var cab = r.cabeceras.map(function (c, i) { return { c: c, i: i }; });
+    function opciones(sel) {
+      return '<option value="-1">(ninguna)</option>' + cab.map(function (x) {
+        return '<option value="' + x.i + '"' + (Number(sel) === x.i ? ' selected' : '') + '>' +
+               esc(x.c || ('columna ' + (x.i + 1))) + '</option>';
+      }).join('');
+    }
+    var campos = [['fecha', 'Fecha (obligatoria)'], ['km', 'Distancia'], ['min', 'Duración'],
+                  ['tipo', 'Tipo de actividad'], ['fc', 'Pulso medio']];
+    var m = r.mapeo || {};
+    box.innerHTML =
+      '<div class="card" style="margin-top:8px"><h2 style="font-size:14px">¿Cuál columna es cuál?</h2>' +
+      '<p class="peq" style="margin:4px 0">El archivo no trae una fecha que se pueda leer. Elige las columnas:</p>' +
+      '<table class="mapa"><thead><tr><th>Campo</th><th>Columna del archivo</th></tr></thead><tbody>' +
+      campos.map(function (c) {
+        return '<tr><td>' + c[1] + '</td><td><select data-map="' + c[0] + '">' +
+               opciones(m[c[0]]) + '</select></td></tr>';
+      }).join('') + '</tbody></table>' +
+      '<p class="peq" style="margin:6px 0">Primera fila: ' +
+        esc(r.muestra && r.muestra[0] ? r.muestra[0].join(' | ') : '') + '</p>' +
+      '<button class="bt pri" id="bMapOk" style="margin-top:6px">Importar con estas columnas</button>' +
+      '<p class="peq" id="mapAviso"></p></div>';
+    $('#bMapOk').onclick = function () {
+      var mapa = {};
+      Array.prototype.forEach.call(box.querySelectorAll('[data-map]'), function (s) {
+        var v = Number(s.value);
+        if (v >= 0) mapa[s.dataset.map] = v;
+      });
+      if (mapa.fecha === undefined) {
+        $('#mapAviso').textContent = 'Falta decir cuál es la fecha.';
+        return;
+      }
+      var res = leerCSV(csvActual.texto, mapa);
+      if (res.error) { $('#mapAviso').textContent = res.error; return; }
+      $('#iMapa').innerHTML = '';
+      $('#iPrev').innerHTML = '<span class="chip">' + res.hechas + ' sesiones nuevas de ' + res.vistas +
+        ' actividades' + (res.sinDatos ? ' · ' + res.sinDatos + ' sin km ni tiempo' : '') + '</span>';
+      pintarTodo();
+    };
+  }
   function previaImport(texto, nombre) {
     var r = importarActividad(texto, nombre);
     var caja = $('#iPrev');
+    pintarMapaCSV(null);
     if (r.error) {
       caja.innerHTML = '<span class="chip" style="color:var(--rojo,#f66)">' + esc(r.error) + '</span>';
+      if (r.cabeceras) { r.texto = texto; r.alta = true; pintarMapaCSV(r); }
       return;
     }
     if (r.hechas !== undefined) {
-      caja.innerHTML = '<span class="chip">' + r.hechas + ' sesiones nuevas de ' + r.vistas + ' actividades</span>';
+      caja.innerHTML = '<span class="chip">' + r.hechas + ' sesiones nuevas de ' + r.vistas + ' actividades</span>' +
+        (r.rechazos && r.rechazos.length
+          ? '<p class="peq" style="margin-top:6px">No se guardaron: ' + r.rechazos.map(esc).join(' · ') + '</p>'
+          : '');
       pintarTodo();
       return;
     }
