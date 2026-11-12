@@ -19,7 +19,7 @@
 
   var VERSION = 'plan-maraton/v1';
   var CLAVE = 'maraton.v1';           // sufijo de version: permite migrar sin romper
-  var PLANES_BASE = {"api":"plan-maraton/v1","generado":"2026-11-11","origen":"Obsidian: 02 - Proyectos/Maraton - plan*.md","atletas":{"jonah":{"edad":42,"fcmax":178,"fc_reposo":null,"nombre":"Jonah","zonas":{"Z1":[107,116],"Z2":[116,134],"Z3":[134,146],"Z4":[148,157],"Z5":[158,166]},"carrera":"2027-04-04","meta":"A 4:45 / B 5:00","semanas":[{"n":1,"fechas":"9 al 15 Nov","km":16.0,"larga":8.0,"calidad":"4x(1' fuerte / 2' suave)","nota":"Arranque suave: solo trotar y caminar si hace falta"},{"n":2,"fechas":"16 al 22 Nov","km":18.0,"larga":9.0,"calidad":"5x(1' / 2')","nota":"Volumen +10%, nada mas"},{"n":3,"fechas":"23 al 29 Nov","km":20.0,"larga":10.0,"calidad":"6x(1' / 2')","nota":"Ultima semana antes de descarga"},{"n":4,"fechas":"30 al 6 Dec","km":15.0,"larga":8.0,"calidad":"sin calidad","nota":"DESCARGA: baja 30%"},{"n":5,"fechas":"7 al 13 Dec","km":22.0,"larga":11.0,"calidad":"2x8' tempo a 6:10/km","nota":"Primer tempo, solo si la semana previa salio limpia"},{"n":6,"fechas":"14 al 20 Dec","km":24.0,"larga":12.0,"calidad":"3x8' tempo","nota":"Fuerza obligatoria, 2 dias"},{"n":7,"fechas":"21 al 27 Dec","km":26.0,"larga":13.0,"calidad":"5x1000 a 5:40/km","nota":"Semana mas larga de la fase"},{"n":8,"fechas":"28 al 3 Jan","km":20.0,"larga":10.0,"calidad":"sin calidad","nota":"DESCARGA"},{"n":9,"fechas":"4 al 10 Jan","km":28.0,"larga":14.0,"calidad":"4x10' tempo","nota":"Comer antes de las largas de mas de 90 min"},{"n":10,"fechas":"11 al 17 Jan","km":30.0,"larga":15.0,"calidad":"6x1000","nota":"Cadencia: meta 165 pasos/min"},{"n":11,"fechas":"18 al 24 Jan","km":32.0,"larga":16.0,"calidad":"2x15' tempo","nota":"Larga con ultimos 3 km a ritmo meta"},{"n":12,"fechas":"25 al 31 Jan","km":25.0,"larga":12.0,"calidad":"sin calidad","nota":"DESCARGA"},{"n":13,"fechas":"1 al 7 Feb","km":34.0,"larga":17.0,"calidad":"8x1000 a 5:35/km","nota":"TEST de 10 km el sabado"},{"n":14,"fechas":"8 al 14 Feb","km":36.0,"larga":18.0,"calidad":"3x15' tempo","nota":"Con el test se decide meta A o B"},{"n":15,"fechas":"15 al 21 Feb","km":38.0,"larga":20.0,"calidad":"10x1000","nota":"Larga con 5 km finales a ritmo meta"},{"n":16,"fechas":"22 al 28 Feb","km":30.0,"larga":15.0,"calidad":"sin calidad","nota":"DESCARGA"},{"n":17,"fechas":"1 al 7 Mar","km":40.0,"larga":22.0,"calidad":"2x20' tempo","nota":"Pico de volumen (no mas con este peso)"},{"n":18,"fechas":"8 al 14 Mar","km":42.0,"larga":24.0,"calidad":"12x1000","nota":"Ultima larga grande. Si hay molestia, 20 km"},{"n":19,"fechas":"15 al 21 Mar","km":34.0,"larga":18.0,"calidad":"6x1000 suave","nota":"DESCARGA y bajar carga"},{"n":20,"fechas":"22 al 28 Mar","km":26.0,"larga":12.0,"calidad":"4x(1' / 2') suave","nota":"TAPER: nada nuevo"},{"n":21,"fechas":"29 al 4 Apr","km":42.2,"larga":42.2,"calidad":"--","nota":"CARRERA 42.2 km"}],"km_declarado":556},"yuli":{"edad":39,"fcmax":181,"fc_reposo":null,"nombre":"Yuli","zonas":{"Z1":[109,118],"Z2":[118,136],"Z3":[136,148],"Z4":[150,159],"Z5":[161,168]},"carrera":"2027-04-04","meta":"A 5:15 / B 5:35 / C terminar","semanas":[{"n":1,"fechas":"9 - 15 nov","km":18.0,"larga":7.0,"calidad":"Intervalos 6x1' fuerte / 2' suave","nota":"Arranque recortado por anemia y fatiga: 18 km, no 20."},{"n":2,"fechas":"16 - 22 nov","km":22.0,"larga":8.0,"calidad":"Tempo 10' comodo-incomodo","nota":"Primer tempo; se corta si el esfuerzo pasa de 7."},{"n":3,"fechas":"23 - 29 nov","km":24.0,"larga":9.0,"calidad":"Intervalos 7x1' / 2' suave","nota":"Fuerza ya en dos sesiones completas."},{"n":4,"fechas":"30 nov - 6 dic","km":17.0,"larga":7.0,"calidad":"Sin calidad","nota":"Descarga: cae ~30 %. Aqui se absorbe el trabajo."},{"n":5,"fechas":"7 - 13 dic","km":26.0,"larga":10.0,"calidad":"Tempo 12'","nota":"Vuelve la carga; revisar sueno y hambre."},{"n":6,"fechas":"14 - 20 dic","km":28.0,"larga":11.0,"calidad":"Intervalos 8x1' / 90 s","nota":"Cadencia alta, zancada corta: no alargar el paso."},{"n":7,"fechas":"21 - 27 dic","km":30.0,"larga":13.0,"calidad":"Tempo 15'","nota":"Primera larga de 90 min; llevar agua."},{"n":8,"fechas":"28 dic - 3 ene","km":21.0,"larga":9.0,"calidad":"Sin calidad","nota":"Descarga."},{"n":9,"fechas":"4 - 10 ene","km":32.0,"larga":14.0,"calidad":"Intervalos 5x3' / 2' suave","nota":"Bloques mas largos, ritmo controlado."},{"n":10,"fechas":"11 - 17 ene","km":33.0,"larga":15.0,"calidad":"Tempo 18'","nota":"Ultimos 10 min de la larga a ritmo de maraton."},{"n":11,"fechas":"18 - 24 ene","km":35.0,"larga":17.0,"calidad":"Intervalos 4x5' / 2' suave","nota":"Semana fuerte: nada de peso extra ni otra actividad dura."},{"n":12,"fechas":"25 - 31 ene","km":24.0,"larga":11.0,"calidad":"Sin calidad","nota":"Descarga."},{"n":13,"fechas":"1 - 7 feb","km":37.0,"larga":18.0,"calidad":"Tempo 20'","nota":"Simulacro: ropa y desayuno del dia de carrera."},{"n":14,"fechas":"8 - 14 feb","km":38.0,"larga":19.0,"calidad":"Test 10 km a tope controlado","nota":"Con el test se fijan las metas A y B."},{"n":15,"fechas":"15 - 21 feb","km":40.0,"larga":22.0,"calidad":"Intervalos 3x8' / 2' suave","nota":"Pico de volumen; vigilar planta del pie y rodilla."},{"n":16,"fechas":"22 - 28 feb","km":28.0,"larga":15.0,"calidad":"Sin calidad","nota":"Descarga antes del pico final."},{"n":17,"fechas":"1 - 7 mar","km":42.0,"larga":24.0,"calidad":"Tempo 25'","nota":"Larga mas larga del plan hasta ahora; nada nuevo."},{"n":18,"fechas":"8 - 14 mar","km":43.0,"larga":28.0,"calidad":"Intervalos 5x2' / 1' suave","nota":"Pico absoluto. Ultima subida de volumen."},{"n":19,"fechas":"15 - 21 mar","km":32.0,"larga":16.0,"calidad":"Sin calidad","nota":"Descarga; el cuerpo empieza a guardar."},{"n":20,"fechas":"22 - 28 mar","km":24.0,"larga":11.0,"calidad":"Tempo 10' suave","nota":"Taper; una sola sesion de fuerza."},{"n":21,"fechas":"29 mar - 4 abr","km":10.0,"larga":null,"calidad":"Sin calidad","nota":"2-3 salidas de 20-25 min y **maraton el domingo**."}],"km_declarado":604}}};       // generado desde el vault
+  var PLANES_BASE = {"api":"plan-maraton/v1","generado":"2026-11-11","origen":"Obsidian: 02 - Proyectos/Maraton - plan*.md","atletas":{"jonah":{"edad":42,"fcmax":178,"fc_reposo":54,"nombre":"Jonah","zonas":{"Z1":[128,135],"Z2":[135,147],"Z3":[147,156],"Z4":[157,163],"Z5":[164,169]},"carrera":"2027-04-04","meta":"A 4:45 / B 5:00","semanas":[{"n":1,"fechas":"9 al 15 Nov","km":16.0,"larga":8.0,"calidad":"4x(1' fuerte / 2' suave)","nota":"Arranque suave: solo trotar y caminar si hace falta"},{"n":2,"fechas":"16 al 22 Nov","km":18.0,"larga":9.0,"calidad":"5x(1' / 2')","nota":"Volumen +10%, nada mas"},{"n":3,"fechas":"23 al 29 Nov","km":20.0,"larga":10.0,"calidad":"6x(1' / 2')","nota":"Ultima semana antes de descarga"},{"n":4,"fechas":"30 al 6 Dec","km":15.0,"larga":8.0,"calidad":"sin calidad","nota":"DESCARGA: baja 30%"},{"n":5,"fechas":"7 al 13 Dec","km":22.0,"larga":11.0,"calidad":"2x8' tempo a 6:10/km","nota":"Primer tempo, solo si la semana previa salio limpia"},{"n":6,"fechas":"14 al 20 Dec","km":24.0,"larga":12.0,"calidad":"3x8' tempo","nota":"Fuerza obligatoria, 2 dias"},{"n":7,"fechas":"21 al 27 Dec","km":26.0,"larga":13.0,"calidad":"5x1000 a 5:40/km","nota":"Semana mas larga de la fase"},{"n":8,"fechas":"28 al 3 Jan","km":20.0,"larga":10.0,"calidad":"sin calidad","nota":"DESCARGA"},{"n":9,"fechas":"4 al 10 Jan","km":28.0,"larga":14.0,"calidad":"4x10' tempo","nota":"Comer antes de las largas de mas de 90 min"},{"n":10,"fechas":"11 al 17 Jan","km":30.0,"larga":15.0,"calidad":"6x1000","nota":"Cadencia: meta 165 pasos/min"},{"n":11,"fechas":"18 al 24 Jan","km":32.0,"larga":16.0,"calidad":"2x15' tempo","nota":"Larga con ultimos 3 km a ritmo meta"},{"n":12,"fechas":"25 al 31 Jan","km":25.0,"larga":12.0,"calidad":"sin calidad","nota":"DESCARGA"},{"n":13,"fechas":"1 al 7 Feb","km":34.0,"larga":17.0,"calidad":"8x1000 a 5:35/km","nota":"TEST de 10 km el sabado"},{"n":14,"fechas":"8 al 14 Feb","km":36.0,"larga":18.0,"calidad":"3x15' tempo","nota":"Con el test se decide meta A o B"},{"n":15,"fechas":"15 al 21 Feb","km":38.0,"larga":20.0,"calidad":"10x1000","nota":"Larga con 5 km finales a ritmo meta"},{"n":16,"fechas":"22 al 28 Feb","km":30.0,"larga":15.0,"calidad":"sin calidad","nota":"DESCARGA"},{"n":17,"fechas":"1 al 7 Mar","km":40.0,"larga":22.0,"calidad":"2x20' tempo","nota":"Pico de volumen (no mas con este peso)"},{"n":18,"fechas":"8 al 14 Mar","km":42.0,"larga":24.0,"calidad":"12x1000","nota":"Ultima larga grande. Si hay molestia, 20 km"},{"n":19,"fechas":"15 al 21 Mar","km":34.0,"larga":18.0,"calidad":"6x1000 suave","nota":"DESCARGA y bajar carga"},{"n":20,"fechas":"22 al 28 Mar","km":26.0,"larga":12.0,"calidad":"4x(1' / 2') suave","nota":"TAPER: nada nuevo"},{"n":21,"fechas":"29 al 4 Apr","km":42.2,"larga":42.2,"calidad":"--","nota":"CARRERA 42.2 km"}],"km_declarado":556,"notas":"Ciática, rodilla y tobillo con historial: dolor que irradia = se corta la sesión. El fútbol cuenta como calidad. Se entrena por pulso y conversación, no por ritmo."},"yuli":{"edad":39,"fcmax":181,"fc_reposo":null,"nombre":"Yuli","zonas":{"Z1":[109,118],"Z2":[118,136],"Z3":[136,148],"Z4":[150,159],"Z5":[161,168]},"carrera":"2027-04-04","meta":"A 5:15 / B 5:35 / C terminar","semanas":[{"n":1,"fechas":"9 - 15 nov","km":18.0,"larga":7.0,"calidad":"Intervalos 6x1' fuerte / 2' suave","nota":"Arranque recortado por anemia y fatiga: 18 km, no 20."},{"n":2,"fechas":"16 - 22 nov","km":22.0,"larga":8.0,"calidad":"Tempo 10' comodo-incomodo","nota":"Primer tempo; se corta si el esfuerzo pasa de 7."},{"n":3,"fechas":"23 - 29 nov","km":24.0,"larga":9.0,"calidad":"Intervalos 7x1' / 2' suave","nota":"Fuerza ya en dos sesiones completas."},{"n":4,"fechas":"30 nov - 6 dic","km":17.0,"larga":7.0,"calidad":"Sin calidad","nota":"Descarga: cae ~30 %. Aqui se absorbe el trabajo."},{"n":5,"fechas":"7 - 13 dic","km":26.0,"larga":10.0,"calidad":"Tempo 12'","nota":"Vuelve la carga; revisar sueno y hambre."},{"n":6,"fechas":"14 - 20 dic","km":28.0,"larga":11.0,"calidad":"Intervalos 8x1' / 90 s","nota":"Cadencia alta, zancada corta: no alargar el paso."},{"n":7,"fechas":"21 - 27 dic","km":30.0,"larga":13.0,"calidad":"Tempo 15'","nota":"Primera larga de 90 min; llevar agua."},{"n":8,"fechas":"28 dic - 3 ene","km":21.0,"larga":9.0,"calidad":"Sin calidad","nota":"Descarga."},{"n":9,"fechas":"4 - 10 ene","km":32.0,"larga":14.0,"calidad":"Intervalos 5x3' / 2' suave","nota":"Bloques mas largos, ritmo controlado."},{"n":10,"fechas":"11 - 17 ene","km":33.0,"larga":15.0,"calidad":"Tempo 18'","nota":"Ultimos 10 min de la larga a ritmo de maraton."},{"n":11,"fechas":"18 - 24 ene","km":35.0,"larga":17.0,"calidad":"Intervalos 4x5' / 2' suave","nota":"Semana fuerte: nada de peso extra ni otra actividad dura."},{"n":12,"fechas":"25 - 31 ene","km":24.0,"larga":11.0,"calidad":"Sin calidad","nota":"Descarga."},{"n":13,"fechas":"1 - 7 feb","km":37.0,"larga":18.0,"calidad":"Tempo 20'","nota":"Simulacro: ropa y desayuno del dia de carrera."},{"n":14,"fechas":"8 - 14 feb","km":38.0,"larga":19.0,"calidad":"Test 10 km a tope controlado","nota":"Con el test se fijan las metas A y B."},{"n":15,"fechas":"15 - 21 feb","km":40.0,"larga":22.0,"calidad":"Intervalos 3x8' / 2' suave","nota":"Pico de volumen; vigilar planta del pie y rodilla."},{"n":16,"fechas":"22 - 28 feb","km":28.0,"larga":15.0,"calidad":"Sin calidad","nota":"Descarga antes del pico final."},{"n":17,"fechas":"1 - 7 mar","km":42.0,"larga":24.0,"calidad":"Tempo 25'","nota":"Larga mas larga del plan hasta ahora; nada nuevo."},{"n":18,"fechas":"8 - 14 mar","km":43.0,"larga":28.0,"calidad":"Intervalos 5x2' / 1' suave","nota":"Pico absoluto. Ultima subida de volumen."},{"n":19,"fechas":"15 - 21 mar","km":32.0,"larga":16.0,"calidad":"Sin calidad","nota":"Descarga; el cuerpo empieza a guardar."},{"n":20,"fechas":"22 - 28 mar","km":24.0,"larga":11.0,"calidad":"Tempo 10' suave","nota":"Taper; una sola sesion de fuerza."},{"n":21,"fechas":"29 mar - 4 abr","km":10.0,"larga":null,"calidad":"Sin calidad","nota":"2-3 salidas de 20-25 min y **maraton el domingo**."}],"km_declarado":604,"notas":"Anemia crónica en tratamiento (Autrin diario, Fisiofer en días de periodo). Se entrena por sensación, no por ritmo: fatiga que no cuadra = se repite la semana."}}};       // generado desde el vault
 
   /* ---------------------------------------------------------------- almacen */
   var memoria = null;                 // respaldo si no hay localStorage (pruebas)
@@ -107,10 +107,36 @@
     return z;
   }
 
+  // Karvonen: con FC de reposo medida, la zona se calcula sobre la reserva y no sobre el maximo.
+  // Con 178 de maxima y 54 de reposo, el mismo esfuerzo cae ~13 ppm mas arriba que por % de FCmax.
+  function zonasPorReserva(fcmax, freposo) {
+    var r = fcmax - freposo, z = {}, k;
+    if (!(r > 20)) return null;
+    for (k in PCT) z[k] = [Math.round(freposo + r * PCT[k][0]), Math.round(freposo + r * PCT[k][1])];
+    return z;
+  }
+
+  // Zonas del perfil efectivo: % de FCmax, o reserva (Karvonen) si hay FC de reposo valida.
+  function zonasCalc(fcmax, freposo) {
+    if (num(fcmax)) {
+      if (num(freposo) && freposo >= 30 && freposo <= 110) {
+        var k = zonasPorReserva(fcmax, freposo);
+        if (k) { k.__modo = 'reserva'; return k; }
+      }
+      var p = zonasPorPct(fcmax);
+      p.__modo = 'pct';
+      return p;
+    }
+    return null;
+  }
+
   function zonasDe(id) {
-    var p = cargar().perfiles[id];
-    if (p && num(p.fcmax)) return zonasPorPct(p.fcmax);
-    return PLANES_BASE.atletas[id].zonas;
+    var b = PLANES_BASE.atletas[id], p = cargar().perfiles[id] || {};
+    var f = num(p.fcmax) ? p.fcmax : b.fcmax;
+    var fr = num(p.fc_reposo) ? p.fc_reposo
+      : (p.fc_reposo === null ? null : (num(b.fc_reposo) ? b.fc_reposo : null));
+    var z = zonasCalc(f, fr);
+    return z || b.zonas;
   }
 
   function idValido(id) {
@@ -131,16 +157,17 @@
   // Asi la app se puede pasar a otra persona sin heredar el nombre ni la FC de quien la copio.
   function atleta(id) {
     var b = PLANES_BASE.atletas[id], p = cargar().perfiles[id];
-    if (!p) return b;
     var o = {}, k;
     for (k in b) if (b.hasOwnProperty(k)) o[k] = b[k];
-    ['nombre', 'edad', 'fcmax', 'fc_reposo', 'meta', 'carrera'].forEach(function (c) {
-      if (p[c] !== undefined && p[c] !== null && p[c] !== '') o[c] = p[c];
-    });
-    // Vaciado a proposito: carrera y meta se pueden dejar en blanco y no deben volver al plan base.
-    ['carrera', 'meta'].forEach(function (c) {
-      if (p[c] === null || p[c] === '') o[c] = null;
-    });
+    if (p) {
+      ['nombre', 'edad', 'fcmax', 'fc_reposo', 'meta', 'carrera', 'notas'].forEach(function (c) {
+        if (p[c] !== undefined && p[c] !== null && p[c] !== '') o[c] = p[c];
+      });
+      // Vaciado a proposito: carrera, meta y notas se pueden dejar en blanco y no deben volver al plan base.
+      ['carrera', 'meta', 'notas', 'fc_reposo'].forEach(function (c) {
+        if (p[c] === null || p[c] === '') o[c] = null;
+      });
+    }
     o.zonas = zonasDe(id);
     return o;
   }
@@ -198,7 +225,7 @@
     zonas: function (id) {
       if (!idValido(id)) return { ok: false, error: 'atleta desconocido: ' + id };
       var a = atleta(id);
-      return { ok: true, fcmax: a.fcmax, fc_reposo: a.fc_reposo, zonas: a.zonas };
+      return { ok: true, fcmax: a.fcmax, fc_reposo: a.fc_reposo, modo: a.zonas.__modo || 'pct', zonas: a.zonas };
     },
 
     // Personaliza el lugar 1 o 2 para otra persona (el caso "le paso la app a mi hermano").
@@ -224,7 +251,7 @@
         p.fcmax = Math.round(f);
       }
       if (campos.fc_reposo !== undefined) {
-        if (campos.fc_reposo === '' || campos.fc_reposo === null) delete p.fc_reposo;
+        if (campos.fc_reposo === '' || campos.fc_reposo === null) p.fc_reposo = null;  // vaciado explicito
         else {
           var fr = Number(campos.fc_reposo);
           if (!isFinite(fr) || fr < 30 || fr > 110) return { ok: false, error: 'FC de reposo fuera de rango (30-110)' };
@@ -232,6 +259,11 @@
         }
       }
       if (campos.meta !== undefined) p.meta = String(campos.meta).slice(0, 80);
+      // "Tu caso": lesiones, condiciones o medicamentos que deben salir en la ficha de cada sesion.
+      if (campos.notas !== undefined) {
+        var nt = String(campos.notas).replace(/\s+/g, ' ').trim().slice(0, 300);
+        p.notas = nt || null;
+      }
       if (campos.carrera !== undefined) {
         if (campos.carrera && !esFecha(campos.carrera)) return { ok: false, error: 'fecha de carrera invalida' };
         p.carrera = campos.carrera || null;
@@ -487,6 +519,7 @@
       var a = atleta(id), n = semanaDe(fecha), f = filaSemana(id, n);
       if (!f) return { ok: false, error: 'semana fuera del plan' };
       var z = a.zonas, z2 = z.Z2, z5 = z.Z5;
+      var etq = z.__modo === 'reserva' ? 'reserva' : '% FC máx';
       var e = cargar();
       var hecha = e.registro[id].filter(function (r) {
         return semanaDe(r.fecha) === n && r.tipo === tipo;
@@ -509,7 +542,7 @@
         pasos = [
           ['Objetivo', 'sumar kilómetros sin quitarte las piernas para la larga ni para la calidad.'],
           ['Duración', '45-60 min; si el día viene cargado, 30 min ya cuentan.'],
-          ['Pulso', 'Z2: ' + z2[0] + '-' + z2[1] + ', techo ' + z2[1] + '. Si se pasa por calor o por la cuesta, se baja el ritmo antes que la duración.'],
+          ['Pulso', 'Z2: ' + z2[0] + '-' + z2[1] + ' por ' + etq + ', techo ' + z2[1] + '. Si se pasa por calor o por la cuesta, se baja el ritmo antes que la duración.'],
           ['Ritmo', 'da igual. Tiene que salir la conversación en frases completas; si no sale, vas fuerte.'],
           ['Cuándo', 'el día que quede libre, nunca el día antes de la larga ni pegado a la calidad.'],
           ['Cuenta como', 'de los ' + f.km + ' km de la semana, ' + f.larga + ' son la larga: el resto' +
@@ -520,12 +553,19 @@
         pasos = [
           ['Objetivo', 'acostumbrar músculo, tendón y cabeza al tiempo encima, no a la velocidad.'],
           ['Distancia', f.larga + ' km, en una sola salida.'],
-          ['Pulso', 'Z2: ' + z2[0] + '-' + z2[1] + ', techo ' + z2[1] + '. En subida manda el pulso: si se pasa del techo, se camina.'],
+          ['Pulso', 'Z2: ' + z2[0] + '-' + z2[1] + ' por ' + etq + ', techo ' + z2[1] + '. En subida manda el pulso: si se pasa del techo, se camina.'],
           ['Ritmo', 'sin objetivo. Se corre a conversación y el último km puede salir algo más vivo, nunca al revés.'],
           ['Antes / después', 'el día anterior, descanso o fácil corto; al día siguiente, nada de calidad.'],
           ['Agua y comida', 'si pasa de 75 min, agua cada 20 min; la comida se prueba en las largas largas, no el día de la carrera.'],
-          ['Se corta si', 'dolor que irradia, pinchazo en la rodilla o el tobillo que ya falló: se camina de vuelta y se anota dónde y en qué minuto.']
+          ['Se corta si', 'dolor que irradia o pinchazo en la rodilla o el tobillo: se camina de vuelta y se anota dónde y en qué minuto.']
         ];
+      }
+
+      // Lo que es de esta semana y de este corredor, no del plan generico.
+      if (f.nota) pasos.push(['Esta semana', String(f.nota)]);
+      if (a.notas) pasos.push(['Tu caso', String(a.notas)]);
+      if (!num(a.fc_reposo)) {
+        pasos.push(['Para afinar', 'falta tu FC en reposo: 3 mañanas tumbado al despertar, sin moverte. Mientras tanto las zonas van por % de FC máxima.']);
       }
 
       var avisos = [];

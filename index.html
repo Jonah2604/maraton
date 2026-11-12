@@ -372,6 +372,10 @@
       <div><label>Día de la carrera</label><input id="ajCarrera" type="date"></div>
       <div><label>Meta</label><input id="ajMeta" maxlength="40" placeholder="A 4:45 / B 5:00"></div>
     </div>
+    <div style="margin-top:10px">
+      <label>Tu caso (lesiones, condiciones, medicamentos)</label>
+      <textarea id="ajNotas" rows="3" maxlength="300" placeholder="Ej. ciática: si el dolor irradia, se corta la sesión" style="width:100%;resize:vertical;background:var(--panel2);border:1px solid var(--linea);border-radius:12px;color:var(--texto);padding:10px 12px;font:inherit;font-size:14px"></textarea>
+    </div>
     <label style="display:flex;align-items:center;gap:9px;margin-top:14px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--texto);font-weight:600">
       <input type="checkbox" id="ajDos" style="width:18px;height:18px;flex:0 0 auto"> Mostrar los dos atletas en la barra
     </label>
@@ -650,6 +654,7 @@
     $('#ajReposo').value = d.atleta.fc_reposo || '';
     $('#ajCarrera').value = d.atleta.carrera || '';
     $('#ajMeta').value = d.atleta.meta || '';
+    $('#ajNotas').value = d.atleta.notas || '';
     $('#ajDos').checked = dosAtletas;
     $('#ajAviso').textContent = '';
     $('#ajAviso').className = 'aviso';
@@ -659,7 +664,8 @@
     var r = A.perfil(atleta, {
       nombre: $('#ajNombre').value, edad: $('#ajEdad').value,
       fcmax: $('#ajFcmax').value, fc_reposo: $('#ajReposo').value,
-      carrera: $('#ajCarrera').value, meta: $('#ajMeta').value
+      carrera: $('#ajCarrera').value, meta: $('#ajMeta').value,
+      notas: $('#ajNotas').value
     });
     if (!r.ok) {
       $('#ajAviso').textContent = r.error;
@@ -1065,7 +1071,7 @@
       $('#ajAviso').className = 'aviso err';
       return;
     }
-    A.perfil(atleta, { nombre: 'Atleta', carrera: '', meta: '' });
+    A.perfil(atleta, { nombre: 'Atleta', carrera: '', meta: '', notas: '', fc_reposo: '' });
     pintarTodo();
     pintarAjustes();
     $('#ajAviso').textContent = 'Lugar en blanco. Escribe el nombre y la FC de quien lo va a usar.';
