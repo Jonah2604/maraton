@@ -1,8 +1,8 @@
 /* Service worker: la app abre sin señal.
    - Navegacion y HTML: red primero (asi una actualizacion entra sola), cache si no hay red.
-   - Resto de archivos propios: cache primero.
+   - Resto de archivos propios: red primero (asi un cambio de agente.js entra solo); cache si no hay red.
    Al cambiar de version sube VERSION: el cache viejo se borra solo. */
-var VERSION = 'maraton-v2';
+var VERSION = 'maraton-v3';
 var PROPIOS = [
   './',
   './index.html',
