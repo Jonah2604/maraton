@@ -46,6 +46,19 @@ Cuatro puertas, sin instalar nada:
 Clave de almacenamiento: `maraton.v1` en `localStorage`.
 Estado: `{api, registro:{jonah,yuli}, ajustes:{jonah,yuli}, perfiles:{}, webhook}`.
 
+### Ejemplo que ya corre
+
+`ejemplos/puente-hermes.js` carga el módulo en Node con un `window` mínimo y hace el recorrido
+completo: leer a los atletas, ver qué toca hoy, anotar una sesión, escribir mal a propósito para
+ver cómo rechaza, y ajustar una semana con su motivo.
+
+```
+node ejemplos/puente-hermes.js
+```
+
+Ese archivo es la plantilla: se cambia la ruta de `require('../agente.js')` por donde viva el
+módulo y el agente ya tiene el plan en la mano.
+
 ### Pasarle la app a otra persona
 
 Se cambia el nombre y la FC máxima: las cinco zonas se recalculan solas.
@@ -69,3 +82,4 @@ si te pasas del techo, **se camina**. El ritmo solo sirve de referencia.
 - `index.html` — interfaz (mobile-first, tema oscuro).
 - `agente.js` — módulo de datos, sin dependencias. Aquí se incrusta el plan.
 - `manifest.webmanifest`, `sw.js`, `icon-*.png` — lo que la hace instalable y offline.
+- `ejemplos/puente-hermes.js` — ejemplo ejecutable de un agente leyendo y escribiendo el plan.
