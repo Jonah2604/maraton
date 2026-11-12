@@ -77,8 +77,10 @@ def main():
             if p != n:
                 cambios.append((atleta, n["n"], p, n))
         planes["atletas"][atleta]["semanas"] = nuevas
+        # Jonah publica "556 km sin contar la carrera": la semana 21 no suma.
+        # Yuli publica 604 que si incluye el trote de la semana de carrera.
         planes["atletas"][atleta]["km_declarado"] = round(
-            sum(s["km"] for s in nuevas if s["n"] <= 20), 1)
+            sum(s["km"] for s in nuevas if s["n"] <= (21 if atleta == "yuli" else 20)), 1)
         planes["generado"] = planes.get("generado")
 
     if not cambios:
