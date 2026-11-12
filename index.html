@@ -676,9 +676,10 @@
       return;
     }
     atleta = r.id;
-    if (A.corredores().corredores.length > 1 && $('#ajDos')) dosAtletas = true;
+    if (A.corredores().corredores.length > 1) dosAtletas = true;
     guardarUI();
-    pintarTodo();
+    pintarAtletas();
+    pintarAjustes();
     $('#bNuevoCor').textContent = 'Nuevo corredor';
     $('#ajAviso').textContent = nombre + ' ya tiene su plan de 21 semanas';
     $('#ajAviso').className = 'aviso ok';
