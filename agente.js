@@ -43,7 +43,7 @@
 
   function vacio() {
     return { api: VERSION, registro: { jonah: [], yuli: [] }, ajustes: { jonah: [], yuli: [] },
-             perfiles: {}, webhook: null };
+             perfiles: {}, planes: {}, webhook: null };
   }
 
   // Lee el estado y descarta lo que no tenga forma valida: una fila mala no tumba la app.
@@ -55,15 +55,27 @@
     try { e = JSON.parse(crudo); } catch (err) { return vacio(); }
     if (!e || typeof e !== 'object') return vacio();
     var base = vacio();
-    ['jonah', 'yuli'].forEach(function (id) {
+    var ids = ['jonah', 'yuli'];
+    if (e.planes && typeof e.planes === 'object') {
+      for (var c in e.planes) if (e.planes.hasOwnProperty(c) && ids.indexOf(c) < 0) ids.push(c);
+    }
+    ids.forEach(function (id) {
       var r = e.registro && e.registro[id];
       if (Array.isArray(r)) base.registro[id] = r.filter(function (x) { return x && typeof x === 'object' && x.fecha; });
       var a = e.ajustes && e.ajustes[id];
       if (Array.isArray(a)) base.ajustes[id] = a.filter(function (x) { return x && typeof x === 'object'; });
     });
     if (typeof e.webhook === 'string' && /^https?:\/\//.test(e.webhook)) base.webhook = e.webhook;
+    if (e.planes && typeof e.planes === 'object') {
+      for (var c in e.planes) if (e.planes.hasOwnProperty(c) && e.planes[c] &&
+          Array.isArray(e.planes[c].semanas) && e.planes[c].semanas.length === 21) {
+        base.planes[c] = e.planes[c];
+        if (!base.registro[c]) base.registro[c] = [];
+        if (!base.ajustes[c]) base.ajustes[c] = [];
+      }
+    }
     if (e.perfiles && typeof e.perfiles === 'object') {
-      ['jonah', 'yuli'].forEach(function (id) {
+      ids.forEach(function (id) {
         var p = e.perfiles[id];
         if (p && typeof p === 'object') base.perfiles[id] = p;
       });
@@ -131,7 +143,9 @@
   }
 
   function zonasDe(id) {
-    var b = PLANES_BASE.atletas[id], p = cargar().perfiles[id] || {};
+    var e = cargar();
+    var b = PLANES_BASE.atletas[id] || e.planes[id] || PLANES_BASE.atletas.jonah;
+    var p = e.perfiles[id] || {};
     var f = num(p.fcmax) ? p.fcmax : b.fcmax;
     var fr = num(p.fc_reposo) ? p.fc_reposo
       : (p.fc_reposo === null ? null : (num(b.fc_reposo) ? b.fc_reposo : null));
@@ -140,7 +154,10 @@
   }
 
   function idValido(id) {
-    return typeof id === 'string' && PLANES_BASE.atletas.hasOwnProperty(id);
+    if (typeof id !== 'string') return false;
+    if (PLANES_BASE.atletas.hasOwnProperty(id)) return true;
+    var e = cargar();
+    return !!(e.planes && e.planes.hasOwnProperty(id));
   }
 
   // Semana del plan que corresponde a una fecha. La semana 1 arranca el 9 nov 2026.
@@ -156,7 +173,9 @@
   // Perfil efectivo: lo del vault, con encima lo que la persona haya ajustado en su telefono.
   // Asi la app se puede pasar a otra persona sin heredar el nombre ni la FC de quien la copio.
   function atleta(id) {
-    var b = PLANES_BASE.atletas[id], p = cargar().perfiles[id];
+    var e = cargar();
+    var b = PLANES_BASE.atletas[id] || e.planes[id], p = e.perfiles[id];
+    if (!b) return null;
     var o = {}, k;
     for (k in b) if (b.hasOwnProperty(k)) o[k] = b[k];
     if (p) {
@@ -197,6 +216,86 @@
   var Agente = {
 
     version: VERSION,
+
+    /* ---------------------------------------------------------------- corredores
+       El plan es de cada quien. `PLANES_BASE` es la plantilla que genera el vault
+       (jonah, yuli) y encima viven los corredores creados aqui, cada uno con sus
+       21 semanas, su registro y su perfil. Un lugar puede estar vacio («Atleta»). */
+    corredores: function () {
+      var e = cargar(), out = [], k;
+      for (k in PLANES_BASE.atletas) if (PLANES_BASE.atletas.hasOwnProperty(k)) {
+        var a = atleta(k);
+        out.push({ id: k, nombre: a.nombre, fcmax: a.fcmax, fc_reposo: a.fc_reposo, zonas: a.zonas,
+                   carrera: a.carrera, meta: a.meta, base: true, registros: e.registro[k].length,
+                   semanas: a.semanas.length });
+      }
+      for (k in e.planes) if (e.planes.hasOwnProperty(k)) {
+        var b = atleta(k);
+        out.push({ id: k, nombre: b.nombre, fcmax: b.fcmax, fc_reposo: b.fc_reposo, zonas: b.zonas,
+                   carrera: b.carrera, meta: b.meta, base: false, registros: e.registro[k].length,
+                   semanas: b.semanas.length });
+      }
+      return { ok: true, corredores: out };
+    },
+
+    // Alta de un corredor propio. Sin `id` se arma con el nombre; sin plan copia el de `copiarDe`.
+    crearCorredor: function (o) {
+      o = o || {};
+      var nombre = String(o.nombre || '').trim();
+      if (nombre.length < 2) return { ok: false, error: 'el nombre necesita al menos 2 letras' };
+      var id = (o.id || nombre).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                 .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24);
+      if (!id) return { ok: false, error: 'no se pudo armar el id con ese nombre' };
+      var e = cargar();
+      if (idValido(id)) return { ok: false, error: 'ya existe el corredor ' + id };
+      var base = PLANES_BASE;
+      for (var k in e.planes) if (e.planes.hasOwnProperty(k)) if (k === (o.copiarDe || 'jonah')) base = e;
+      var origen = null;
+      if (o.copiarDe) {
+        if (e.planes[o.copiarDe]) origen = e.planes[o.copiarDe];
+        else if (PLANES_BASE.atletas[o.copiarDe]) origen = PLANES_BASE.atletas[o.copiarDe];
+        if (!origen) return { ok: false, error: 'no existe el plan a copiar: ' + o.copiarDe };
+      } else {
+        origen = PLANES_BASE.atletas.jonah;   // el plan del dueno de la app, sin su perfil
+      }
+      var plan = {
+        nombre: nombre, edad: num(o.edad) ? Math.round(o.edad) : null,
+        fcmax: num(o.fcmax) ? Math.round(o.fcmax) : 178,
+        fc_reposo: num(o.fc_reposo) ? Math.round(o.fc_reposo) : null,
+        carrera: o.carrera || null, meta: o.meta || null, notas: o.notas || null,
+        semanas: JSON.parse(JSON.stringify(origen.semanas || [])),
+        km_declarado: origen.km_declarado || null
+      };
+      if (plan.semanas.length !== 21) return { ok: false, error: 'el plan a copiar no tiene 21 semanas' };
+      e.planes[id] = plan;
+      e.registro[id] = []; e.ajustes[id] = [];
+      if (o.perfil !== false) e.perfiles[id] = { nombre: nombre };
+      if (!guardar(e)) return { ok: false, error: 'no se pudo guardar' };
+      avisar();
+      return { ok: true, id: id, corredor: Agente.leer(id).atleta };
+    },
+
+    // Guarda el plan de un corredor (las 21 semanas) para que no se pierda al recargar.
+    // El vault sigue siendo la fuente de verdad del plan de Jonah y de Yuli.
+    guardarPlan: function (id, semanas) {
+      if (!idValido(id)) return { ok: false, error: 'atleta desconocido: ' + id };
+      if (!Array.isArray(semanas) || semanas.length !== 21) return { ok: false, error: 'faltan semanas: se esperan 21' };
+      var e = cargar();
+      if (!e.planes[id]) return { ok: false, error: 'ese corredor no tiene plan propio (es plantilla del vault)' };
+      e.planes[id].semanas = semanas.slice();
+      guardar(e); avisar();
+      return { ok: true, semanas: e.planes[id].semanas.length };
+    },
+
+    borrarCorredor: function (id) {
+      if (!idValido(id)) return { ok: false, error: 'atleta desconocido: ' + id };
+      var e = cargar();
+      if (!e.planes[id]) return { ok: false, error: 'ese corredor es plantilla del vault: no se borra desde la app' };
+      delete e.planes[id]; delete e.perfiles[id];
+      e.registro[id] = []; e.ajustes[id] = [];
+      guardar(e); avisar();
+      return { ok: true, borrado: id };
+    },
 
     atletas: function () {
       var out = [], k;
@@ -599,7 +698,8 @@
       return {
         api: VERSION,
         almacen: CLAVE,
-        funciones: ['atletas', 'leer', 'zonas', 'sesionDeHoy', 'ficha', 'balance', 'registrar', 'borrar',
+        funciones: ['atletas', 'corredores', 'crearCorredor', 'guardarPlan', 'borrarCorredor',
+                    'leer', 'zonas', 'sesionDeHoy', 'ficha', 'balance', 'registrar', 'borrar',
                     'ajustarSemana', 'perfil', 'reiniciar', 'exportar', 'importar',
                     'webhook', 'docs', 'aplicarHash'],
         sesion: ['fecha AAAA-MM-DD', 'tipo: calidad|facil|larga|fuerza|carrera|otro', 'km', 'min',
@@ -628,6 +728,13 @@
         '                            fc_media:128, fc_max:140, esf:4, molestia:""})',
         '  Agente.borrar("jonah","2026-11-11","facil")',
         '  Agente.ajustarSemana("jonah", 5, {km:24}, "se subio por semana limpia")',
+        '',
+        'CORREDORES (cada quien con su plan)',
+        '  Agente.corredores()               -> { ok, corredores:[{id,nombre,base,semanas,registros}] }',
+        '  Agente.crearCorredor({nombre:"Ana", fcmax:190, copiarDe:"jonah"})',
+        '    -> da de alta un plan propio de 21 semanas; copiarDe puede ser jonah, yuli u otro',
+        '  Agente.guardarPlan("ana", semanas)  -> guarda sus 21 semanas',
+        '  Agente.borrarCorredor("ana")        -> solo para corredores propios, no la plantilla',
         '',
         'PERFIL (para usar la app con otra persona)',
         '  Agente.perfil("jonah", {nombre:"Ana", edad:35, fcmax:190, meta:"terminar"})',
