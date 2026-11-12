@@ -380,10 +380,64 @@
       <input type="checkbox" id="ajDos" style="width:18px;height:18px;flex:0 0 auto"> Mostrar los dos atletas en la barra
     </label>
     <button class="bt pri" style="width:100%;margin-top:12px" id="ajGuardar">Guardar</button>
-    <button class="bt" style="width:100%;margin-top:8px" id="bNuevoCor">Nuevo corredor</button>
+    <button class="bt" style="width:100%;margin-top:8px" id="bNuevoCor">Agregar otro corredor</button>
     <button class="bt" style="width:100%;margin-top:8px" id="ajBlanco">Vaciar este lugar (borra su registro)</button>
     <button class="bt" style="width:100%;margin-top:8px;display:none" id="bBorrarCor">Borrar este corredor</button>
     <div class="aviso" id="ajAviso"></div>
+  </div>
+</div>
+
+<div class="hoja" id="nuevo">
+  <div class="caja">
+    <div class="fila"><b style="font-size:16px">Corredor nuevo</b>
+      <button class="bt mini" id="nuCerrar">Cerrar</button></div>
+    <p class="peq" style="margin:8px 0 0">Su plan no se copia del de otro: se arma con su meta y con lo que
+      aguanta hoy. Lo que falte se pregunta, no se inventa.</p>
+    <div style="margin-top:12px"><label>Nombre</label><input id="nuNombre" maxlength="40" placeholder="Cómo se llama"></div>
+    <div class="dos">
+      <div><label>Meta</label>
+        <select id="nuMeta">
+          <option value="10k">10 km</option>
+          <option value="5k">5 km</option>
+          <option value="21k">Medio maratón (21 km)</option>
+          <option value="42k">Maratón (42 km)</option>
+          <option value="base">Base: llegar a correr 20 min seguidos</option>
+        </select></div>
+      <div><label>¿Cuándo arranca?</label><input id="nuInicio" type="date"></div>
+    </div>
+    <div class="dos">
+      <div><label>Peso (kg)</label><input id="nuKg" type="number" inputmode="decimal" min="30" max="200"></div>
+      <div><label>Altura (cm)</label><input id="nuCm" type="number" inputmode="numeric" min="120" max="220"></div>
+    </div>
+    <div class="dos">
+      <div><label>Edad</label><input id="nuEdad" type="number" inputmode="numeric" min="10" max="100"></div>
+      <div><label>FC máxima</label><input id="nuFcmax" type="number" inputmode="numeric" min="120" max="220" placeholder="si la sabe"></div>
+    </div>
+    <div class="dos">
+      <div><label>FC en reposo</label><input id="nuReposo" type="number" inputmode="numeric" min="30" max="110" placeholder="3 mañanas"></div>
+      <div><label>Días por semana</label><input id="nuDias" type="number" inputmode="numeric" min="2" max="6" value="3"></div>
+    </div>
+    <div class="dos">
+      <div><label>Minutos por sesión</label><input id="nuMin" type="number" inputmode="numeric" min="15" max="180" value="40"></div>
+      <div><label>¿Corre seguido?</label>
+        <select id="nuCorre">
+          <option value="si">Sí: 20 minutos seguidos</option>
+          <option value="no">Todavía no</option>
+        </select></div>
+    </div>
+    <div style="margin-top:10px"><label>De dónde viene</label>
+      <select id="nuHist">
+        <option value="algo">Corre de vez en cuando</option>
+        <option value="ninguno">No corre desde hace tiempo / nunca</option>
+        <option value="constante">Corre seguido desde hace meses</option>
+      </select></div>
+    <div style="margin-top:10px">
+      <label>Molestias o lesiones (opcional)</label>
+      <input id="nuMolestias" maxlength="120" placeholder="rodilla, planta del pie, espalda…">
+    </div>
+    <button class="bt pri" style="width:100%;margin-top:12px" id="nuCrear">Crear su plan</button>
+    <div class="aviso" id="nuAviso"></div>
+    <div id="nuPlan" class="peq"></div>
   </div>
 </div>
 
@@ -398,6 +452,12 @@
   var tipoImp = 'facil', impActual = null;
 
   function $(s) { return document.querySelector(s); }
+  // nombre legible de cada tipo de sesion (las fichas y el alta usan el mismo)
+  function nombreTipo(t) {
+    return { larga: 'Larga', calidad: 'Calidad', facil: 'Fácil', regenerativo: 'Regenerativo',
+             fuerza: 'Fuerza', descanso: 'Descanso', carrera: 'Carrera', bici: 'Bici' }[t] || t;
+  }
+
   function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, function (c) {
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
   function fechaCorta(iso) {
@@ -664,24 +724,99 @@
     $('#ajAviso').className = 'aviso';
   }
 
-  // Alta de un corredor nuevo: su propio plan de 21 semanas, copiado o vacio.
-  function nuevoCorredor() {
-    var nombre = prompt('Nombre del nuevo corredor');
-    if (!nombre || nombre.trim().length < 2) return;
-    var fc = prompt('FC máxima (la de su reloj o la de la última prueba)', '178');
-    var r = A.crearCorredor({ nombre: nombre, fcmax: fc });
+  // ------------------------------------------------------------- corredor nuevo
+  // Un formulario, no una cadena de prompts: la meta, lo que aguanta y lo que tiene al dia.
+  // El plan lo arma Agente.semilla(); aqui solo se pinta, se revisa y se guarda.
+  var NU = null;   // ultima semilla armada, para no recalcular al crear
+
+  function abrirNuevo() {
+    $('#nuNombre').value = '';
+    $('#nuMeta').value = '10k';
+    $('#nuInicio').value = A.hoy();
+    ['nuKg','nuCm','nuEdad','nuFcmax','nuReposo','nuMolestias'].forEach(function (id) { $('#' + id).value = ''; });
+    $('#nuDias').value = 3;
+    $('#nuMin').value = 40;
+    $('#nuCorre').value = 'si';
+    $('#nuHist').value = 'algo';
+    $('#nuAviso').textContent = '';
+    $('#nuAviso').className = 'aviso';
+    $('#nuPlan').innerHTML = '';
+    NU = null;
+    verPlanNuevo();
+    $('#nuevo').classList.add('abierta');
+  }
+
+  function datosNuevo() {
+    return {
+      nombre: $('#nuNombre').value.trim(),
+      objetivo: $('#nuMeta').value,
+      inicio: $('#nuInicio').value,
+      kg: $('#nuKg').value, cm: $('#nuCm').value, edad: $('#nuEdad').value,
+      fcmax: $('#nuFcmax').value, fc_reposo: $('#nuReposo').value,
+      dias: $('#nuDias').value, min: $('#nuMin').value,
+      conversacion: $('#nuCorre').value === 'si',
+      historial: $('#nuHist').value,
+      molestias: $('#nuMolestias').value.trim()
+    };
+  }
+
+  // Muestra el plan antes de crearlo; si falta algo, dice que falta y no inventa.
+  function verPlanNuevo() {
+    var o = datosNuevo();
+    var r = A.semilla(o);
+    $('#nuPlan').innerHTML = '';
     if (!r.ok) {
-      $('#ajAviso').textContent = r.error;
-      $('#ajAviso').className = 'aviso err';
+      var pasos = A.semillaPasos(r.faltan || [], r.base);
+      $('#nuAviso').textContent = r.error === 'faltan datos' ? 'Faltan datos: ' : (r.error || 'No se pudo armar');
+      $('#nuAviso').className = 'aviso err';
+      $('#nuPlan').innerHTML = pasos.length
+        ? '<ul style="margin:8px 0 0 18px">' + pasos.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>'
+        : '';
+      NU = null;
+      return;
+    }
+    NU = r;
+    var s1 = r.semanas[0];
+    $('#nuAviso').textContent = (r.base ? 'Empieza con base de 6 semanas (aún no corre seguido)' :
+      'Plan para ' + nombreMeta(r.objetivo) + ': ' + r.semanas.length + ' semanas') +
+      ' · semana 1: ' + (s1.km || (s1.totalMin + ' min'));
+    $('#nuAviso').className = 'aviso ok';
+    var filas = s1.filas.map(function (f) {
+      return '<tr><td>' + (f.fecha || '') + '</td><td>' + nombreTipo(f.tipo) + '</td><td>' +
+             (f.km || '—') + '</td><td>' + f.min + ' min</td></tr>';
+    }).join('');
+    $('#nuPlan').innerHTML = '<div style="margin-top:12px"><b style="color:var(--hueso)">Semana 1</b></div>' +
+      '<table style="width:100%;font-size:12px;margin-top:6px;border-collapse:collapse">' +
+      '<tr style="color:var(--tenue)"><th align="left">Fecha</th><th align="left">Sesión</th><th align="left">km</th><th align="left">Tiempo</th></tr>' +
+      filas + '</table>' + '<div style="margin-top:8px;color:var(--tenue)">' +
+      'Pico: ' + (r.km_declarado || '—') + ' km · ' + r.semanas.length + ' semanas</div>' +
+      (r.notas && r.notas.length ? '<ul style="margin:10px 0 0 18px">' + r.notas.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '');
+  }
+
+  function nombreMeta(m) {
+    return { 'base': 'base', '5k': '5 km', '10k': '10 km', '21k': 'medio maratón', '42k': 'maratón' }[m] || m;
+  }
+
+  function crearCorredor() {
+    if (!NU) { verPlanNuevo(); if (!NU) return; }
+    var o = datosNuevo();
+    var r = A.crearCorredor({
+      nombre: o.nombre, fcmax: o.fcmax, fc_reposo: o.fc_reposo, edad: o.edad,
+      kg: o.kg, cm: o.cm, objetivo: NU.objetivo, inicio: o.inicio,
+      dias: o.dias, min: o.min, historial: o.historial, conversacion: o.conversacion,
+      molestias: o.molestias
+    });
+    if (!r.ok) {
+      $('#nuAviso').textContent = r.error + (r.faltan && r.faltan.length ? ' (' + r.faltan.join(', ') + ')' : '');
+      $('#nuAviso').className = 'aviso err';
       return;
     }
     atleta = r.id;
-    if (A.corredores().corredores.length > 1) dosAtletas = true;
-    guardarUI();
-    pintarAtletas();
-    pintarAjustes();
-    $('#bNuevoCor').textContent = 'Nuevo corredor';
-    $('#ajAviso').textContent = nombre + ' ya tiene su plan de 21 semanas';
+    dosAtletas = A.corredores().corredores.length > 1;
+    guardarUI(); pintarAtletas(); pintarAjustes();
+    $('#nuevo').classList.remove('abierta');
+    $('#ajAviso').textContent = r.nombre + ' · ' + nombreMeta(r.objetivo || 'base') + ', ' +
+      r.semanas_total + ' semanas desde el ' + fechaCorta(r.inicio);
     $('#ajAviso').className = 'aviso ok';
   }
 
@@ -1087,7 +1222,15 @@
     if (ev.target === this) { this.classList.remove('abierta'); pintarTodo(); }
   };
   $('#ajGuardar').onclick = ajustesGuardar;
-  $('#bNuevoCor').onclick = nuevoCorredor;
+  $('#bNuevoCor').onclick = abrirNuevo;
+  $('#nuCerrar').onclick = function () { $('#nuevo').classList.remove('abierta'); };
+  $('#nuCrear').onclick = crearCorredor;
+  ['nuNombre','nuKg','nuCm','nuEdad','nuFcmax','nuReposo','nuDias','nuMin'].forEach(function (id) {
+    $('#' + id).oninput = function () { NU = null; verPlanNuevo(); };
+  });
+  ['nuMeta','nuCorre','nuHist','nuInicio'].forEach(function (id) {
+    $('#' + id).onchange = function () { NU = null; verPlanNuevo(); };
+  });
   $('#bBorrarCor').onclick = function () {
     var c = A.corredores().corredores.filter(function (x) { return x.id === atleta; })[0];
     if (!c || c.base) return;

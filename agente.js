@@ -43,7 +43,7 @@
 
   function vacio() {
     return { api: VERSION, registro: { jonah: [], yuli: [] }, ajustes: { jonah: [], yuli: [] },
-             perfiles: {}, planes: {}, webhook: null };
+             perfiles: {}, planes: {}, webhook: null, salida: null };   // salida=null -> lo de abajo no se toco nunca
   }
 
   // Lee el estado y descarta lo que no tenga forma valida: una fila mala no tumba la app.
@@ -66,9 +66,13 @@
       if (Array.isArray(a)) base.ajustes[id] = a.filter(function (x) { return x && typeof x === 'object'; });
     });
     if (typeof e.webhook === 'string' && /^https?:\/\//.test(e.webhook)) base.webhook = e.webhook;
+    // Salida del registro: si se guardo (aunque sea con los dos apagados) mandan los dos campos.
+    if (e.salida && typeof e.salida === 'object') {
+      base.salida = { jonah: e.salida.jonah !== false, yuli: e.salida.yuli !== false };
+    }
     if (e.planes && typeof e.planes === 'object') {
       for (var c in e.planes) if (e.planes.hasOwnProperty(c) && e.planes[c] &&
-          Array.isArray(e.planes[c].semanas) && e.planes[c].semanas.length === 21) {
+          Array.isArray(e.planes[c].semanas) && e.planes[c].semanas.length >= 4) {
         base.planes[c] = e.planes[c];
         if (!base.registro[c]) base.registro[c] = [];
         if (!base.ajustes[c]) base.ajustes[c] = [];
@@ -160,8 +164,327 @@
     return !!(e.planes && e.planes.hasOwnProperty(id));
   }
 
-  // Semana del plan que corresponde a una fecha. La semana 1 arranca el 9 nov 2026.
+/* ------------------------------------------------------------------ meta puesta por el corredor
+   Base sacada de running-coach/references/planes-otras-distancias.md. Duraciones historicas,
+   no promesas: el plan pone la distancia y el tiempo de cada sesion, el reloj pone el ritmo. */
+var METAS = {
+  base: { clave: 'base', nombre: 'Base: correr 20 minutos seguidos', km: 0, semanas: 6, dias: 3 },
+  '5k':  { clave: '5k',  nombre: '5 km',           km: 5,    semanas: 10, dias: 3, largaMax: 7 },
+  '10k': { clave: '10k', nombre: '10 km',          km: 10,   semanas: 12, dias: 4, largaMax: 12 },
+  '21k': { clave: '21k', nombre: 'medio maraton',  km: 21.1, semanas: 16, dias: 4, largaMax: 20 },
+  '42k': { clave: '42k', nombre: 'maraton',        km: 42.2, semanas: 20, dias: 5, largaMax: 34 }
+};
+
+// Cuanto aguanta de entrada. Lo que no se sabe se pregunta; no se inventa.
+// El techo real lo pone el IMC y la experiencia, no la meta que eligio.
+function perfilDe(o) {
+  o = o || {};
+  var p = { faltan: [], estimado: false };
+  var kg = num(o.kg), cm = num(o.cm), fcmax = num(o.fcmax), reposo = num(o.fc_reposo);
+  p.kg = kg; p.cm = cm;
+  p.imc = (kg && cm) ? Math.round(kg / ((cm / 100) * (cm / 100)) * 10) / 10 : null;
+  if (fcmax) { p.fcmax = Math.round(fcmax); }
+  else {
+    var edad = num(o.edad);
+    if (edad) { p.fcmax = Math.round(208 - 0.7 * edad); p.estimado = true; }
+    else { p.fcmax = null; p.faltan.push('fcmax'); }
+  }
+  // el reposo mejora las zonas (Karvonen) pero no es requisito para armar un plan;
+  // sin el se prescribe por % de FCmax, que es lo que ya hace la ficha
+  if (reposo >= 30 && reposo <= 110) p.fc_reposo = Math.round(reposo);
+  else p.fc_reposo = null;
+  p.hist = String(o.historial || '').trim().toLowerCase();   // ninguno | algo | constante
+  if (['ninguno', 'algo', 'constante', 'nada', 'poco', 'seguido'].indexOf(p.hist) < 0) {
+    p.hist = null; p.faltan.push('historial');
+  } else if (p.hist === 'nada') p.hist = 'ninguno';
+  else if (p.hist === 'poco') p.hist = 'algo';
+  else if (p.hist === 'seguido') p.hist = 'constante';
+  // conversacion: true -> aguanta 20 min corriendo; false -> no; null -> no se sabe
+  var c = o.conversacion;
+  if (c === true || c === 'si' || c === 1) p.corrio20 = true;
+  else if (c === false || c === 'no' || c === 0) p.corrio20 = false;
+  else { p.corrio20 = null; p.faltan.push('nivel'); }
+  var d = num(o.dias);
+  if (d >= 2 && d <= 6) p.dias = Math.round(d); else { p.dias = null; p.faltan.push('dias'); }
+  p.min = num(o.min) || 40;
+  p.molestias = String(o.molestias || '').trim();
+  p.caminata = !!(p.imc && p.imc >= 30) || p.hist === 'ninguno' || !!p.molestias;
+  p.notas = [];
+  if (p.imc && p.imc >= 30) p.notas.push('IMC ' + p.imc + ': misma duracion, con pausas de caminata; nada de series');
+  if (p.molestias) p.notas.push('molestias previas: se sube volumen solo si la semana queda limpia');
+  return p;
+}
+
+// Techo de volumen semanal y km de arranque (historial x IMC x molestias).
+// Sin historial no hay plan magico: el techo baja y el plan se arma con tiempo, no con km.
+function techoDe(p, meta) {
+  var k = { ninguno: 0.6, algo: 1, constante: 1.25 }[p.hist] || 0.6;
+
+  if (p.molestias) k *= 0.85;
+  // el IMC no recorta volumen: recorta el paso (mas caminata, menos km por sesion)
+  var punta = { '5k': 20, '10k': 32, '21k': 48, '42k': 62 }[meta.clave] || 10;
+  var ini = { '5k': 8, '10k': 12, '21k': 18, '42k': 24 }[meta.clave] || 6;
+  var techo = Math.round(punta * k * 10) / 10;
+  // km de la PRIMERA semana: el techo de la semana punta, con lo que se aguanta de entrada.
+  var arranque = Math.round(Math.max(10, ini * Math.min(1, k + 0.15)) * 10) / 10;
+  if (techo < arranque) techo = arranque;
+  return { techo: techo, arranque: arranque };
+}
+
+function planPorMeta(clave) {
+  var c = String(clave || '').trim().toLowerCase().replace(/km$/, 'k');
+  if (c === '21.1k' || c === '21.1') c = '21k';
+  if (c === '42.2k' || c === '42.2') c = '42k';
+  if (c === 'medio' || c === 'medio maraton' || c === 'media') c = '21k';
+  if (c === 'maraton') c = '42k';
+  if (c === '5' || c === '5km') c = '5k';
+  if (c === '10' || c === '10km') c = '10k';
+  return METAS[c] || null;
+}
+
+// Plan completo: perfil -> techo -> semanas con rampa, descarga, una calidad y la larga.
+// Se pide lo minimo para prescribir con criterio; lo que falte se dice, no se adivina.
+function preparar(clave, o) {
+  var meta = planPorMeta(clave);
+  if (!meta) return { ok: false, error: 'meta invalida: usa 5k, 10k, 21k, 42k o base', faltan: [], base: false };
+  var p = perfilDe(o);
+  p.metaClave = meta.clave;
+  var faltan = p.faltan.slice();
+  if (p.corrio20 === false || p.hist === 'ninguno') {
+    // no aguanta 20 minutos seguidos: primero base, despues la meta elegida
+    var b = JSON.parse(JSON.stringify(METAS.base));
+    b.elegida = meta.clave;
+    return { ok: true, meta: b, perfil: p, base: true,
+             plan: armarBase(p, techoDe(p, b)) };
+  }
+  if (faltan.length) return { ok: false, error: 'faltan datos', faltan: faltan, perfil: p };
+  return { ok: true, meta: meta, perfil: p, base: false, plan: armar(meta, p, techoDe(p, meta)) };
+}
+
+// Semanas de puro trote-caminata, sin km prescritos.
+function armarBase(p, t) {
+  var dias = Math.max(2, Math.min(3, p.dias || 3));
+  var semanas = [], n, i, j;
+  // 6 semanas de trote-caminata: el tiempo total sube, el km no se prescribe.
+  // Escalones de trote / caminata por semana; el ultimo todavia lleva caminata a proposito.
+  var esc = { 1: [1, 2, 6], 2: [2, 2, 6], 3: [3, 2, 6], 4: [5, 2, 6], 5: [6, 2, 5], 6: [8, 2, 5] };
+  for (n = 1; n <= 6; n++) {
+    var e = esc[n], filas = [], totalMin = 0;
+    for (i = 1; i <= dias; i++) {
+      var esLarga = (i === dias);
+      var bloques = e[2] + (esLarga ? 2 : 0);
+      var minT = e[0] * bloques, minC = e[1] * bloques;
+      if (minT > (p.min || 40) && !esLarga) {   // respeta el tiempo que la persona tiene al dia
+        bloques = Math.max(3, Math.floor((p.min || 40) / (e[0] + e[1])));
+        minT = e[0] * bloques; minC = e[1] * bloques;
+      }
+      filas.push({ i: i, tipo: esLarga ? 'larga' : 'facil', min: minT + minC, km: null,
+                   nota: 'trote ' + e[0] + ' min / caminata ' + e[1] + ' min x ' + bloques +
+                         ' (' + minT + ' min trotando)' });
+      totalMin += minT + minC;
+    }
+    semanas.push({ n: n, km: null, totalMin: totalMin, filas: filas });
+  }
+  return { semanas: semanas, total: null, base: true, techo: t.techo };
+}
+
+// Peso de cada tipo de sesion dentro de la semana: la larga manda, la calidad no se pasa de 15 %.
+var PESO = { larga: 0.30, calidad: 0.18, facil: 0.26, regenerativo: 0.22 };
+
+function armar(meta, p, t) {
+  var n = meta.semanas, dias = Math.max(2, Math.min(5, p.dias || meta.dias));
+  var arranque = t.arranque, techo = t.techo, tope = p.min || 40;
+  var semanas = [], w, j;
+  // 1) volumen de cada semana: arranca en lo que aguanta, +10 % si la anterior fue normal,
+  //    descarga cada 4 a ~70 %, la semana previa a la carrera baja y la de la carrera es minima.
+  var vol = [], previo = arranque;
+  var descLen = 0.45 + 0.20 * Math.min(1, n / 16);   // mas largo el plan, mas suave la bajada
+  for (w = 1; w <= n; w++) {
+    var km;
+    if (w === 1) km = arranque;
+    else if (w === n) km = previo * 0.55;
+    else if (w === n - 1) km = previo * 0.55;
+    else if (w % 4 === 0) km = previo * descLen;
+    else km = previo * 1.10;
+    km = Math.round(Math.min(techo, Math.max(arranque * 0.85, km)) * 10) / 10;
+    vol.push(km); previo = km;
+  }
+  // 2) sesiones: el tiempo manda. La larga no pasa del 30 % de la semana (ni de su tope por meta);
+  //    las cortas se reparten lo que queda y nunca comen mas minutos que la larga.
+  for (w = 1; w <= n; w++) {
+    var paso = Math.min(9, Math.floor((w - 1) * 9 / Math.max(1, n - 1)));
+    var esCarrera = (w === n);
+    var hayCalidad = (dias >= 3 && w > 2 && !esCarrera && w !== n - 1);
+    var volKm = vol[w - 1];
+    // 1) que sesiones lleva la semana. La larga siempre va al final; la calidad, 48 h antes.
+    var fila0 = [];
+    for (j = 1; j <= dias; j++) {
+      if (j === dias) fila0.push('larga');
+      else if (hayCalidad && j === dias - 1) fila0.push('calidad');
+      else fila0.push((w % 4 === 0 || w === n - 1) ? 'regenerativo' : 'facil');
+    }
+    // 2) minutos de cada sesion: manda el tiempo que la persona tiene al dia y el paso de la semana
+    var cortas = [];
+    for (j = 0; j < fila0.length; j++) {
+      var tipo = fila0[j];
+      var min = minDeSesion(tipo, paso);
+      if (p.caminata) min = Math.round(min * 0.9);   // mismo rato, con pausas
+      if (tipo !== 'larga' && min > tope) min = Math.max(20, tope);
+      cortas.push({ tipo: tipo, min: Math.max(15, min) });
+    }
+    // 3) km: la larga es el 27 % del volumen (o la carrera el dia que toca); el resto se reparte
+    //    sobre lo que queda, sin romper el ritmo de cada tipo de sesion.
+    var esSemanaDescarga = (w % 4 === 0) || w === n - 1;
+    // la ultima semana normal no trae la larga mas larga del plan: 20 % por debajo del pico
+    var picoLarga = 0;
+    semanas.forEach(function (sw) { if (sw.larga > picoLarga) picoLarga = sw.larga; });
+    var kmLarga;
+    if (esCarrera) {
+      kmLarga = meta.km;
+      cortas.forEach(function (c) { if (c.tipo !== 'larga') c.min = Math.max(10, Math.round(minDeSesion('regenerativo', 0) * 0.5)); });
+    } else {
+      // la larga crece con la semana y no se estira para cuadrar numeros: el 32 % es su techo
+      var fracLarga = 0.22 + 0.06 * Math.min(1, w / Math.max(2, n - 2));
+      if (esSemanaDescarga) fracLarga = 0.22;
+      // la larga se mueve entre su minimo semanal y su techo del 32 % (36 % con el volumen bajo)
+      var techoLarga = volKm * (w <= 2 ? 0.36 : 0.32);
+      var pisoLarga = Math.min(techoLarga, volKm * 0.24 * (1 + 0.25 * Math.min(1, w / 6)));
+      kmLarga = Math.round(Math.min(meta.largaMax, techoLarga, Math.max(pisoLarga, volKm * fracLarga)) * 10) / 10;
+      if (w === n - 2 && picoLarga > 0) kmLarga = Math.min(kmLarga, Math.round(picoLarga * 0.85 * 10) / 10);
+      if (kmLarga < 2) kmLarga = 2;
+    }
+    var minLarga = Math.round(kmLarga * ritmoDe(p, 'larga'));
+    if (tipo === 'larga') { }   // la larga no la topa el minuto diario
+    var minCortas = 0;
+    cortas.forEach(function (c) { if (c.tipo !== 'larga') minCortas += c.min; });
+    // el volumen lo manda la semana: la larga se lleva su parte y las cortas el resto.
+    // El tiempo se recalcula despues con el ritmo de cada tipo; si sale fuera de rango,
+    // se ajusta el km, no se inventa un ritmo.
+    var presupuesto = Math.round((volKm - kmLarga) * 10) / 10;
+    cortas.forEach(function (c) {
+      if (c.tipo === 'larga') { c.km = kmLarga; c.min = minLarga; return; }
+      var r = ritmoDe(p, c.tipo);
+      if (esCarrera) {   // calentamiento suelto antes de la carrera
+        c.km = Math.max(1.5, Math.round(c.min / r * 10) / 10);
+        return;
+      }
+      var parte = (minCortas > 0) ? presupuesto * (c.min / minCortas) : presupuesto / Math.max(1, dias - 1);
+      // el tiempo manda: el km sale de los minutos que la persona tiene ese dia
+      // el km del reparto manda; los minutos salen de ese km y se topan al tiempo del dia
+      var mn = Math.min(tope, Math.max(15, Math.round(Math.max(1.5, Math.round(parte * 10) / 10) * r)));
+      c.min = mn;
+      c.km = Math.max(1.5, Math.round(mn / r * 10) / 10);
+      // y si de ahi sale mas km del que toca, se queda el del reparto
+      var kmParte = Math.max(1.5, Math.round(parte * 10) / 10);
+      if (c.km > kmParte * 1.8) { c.km = Math.round(kmParte * 1.8 * 10) / 10; c.min = Math.max(15, Math.round(c.km * r)); }
+    });
+    var sumKm = 0, sumMin = 0;
+    cortas.forEach(function (c) { if (c.tipo !== 'larga') { sumKm += c.km; sumMin += c.min; } });
+    var totalKm;
+    if (esCarrera) {
+      // la semana de la carrera no suma entrenamiento: el km de la semana es la carrera
+      // el km de la semana es la distancia de la carrera; las cortas son trote aparte
+      totalKm = meta.km + Math.round(sumKm * 10) / 10;
+    } else {
+      sumKm += kmLarga;
+      totalKm = Math.round(sumKm * 10) / 10;
+    }
+    var filas = cortas.map(function (c, ix) { return { i: ix + 1, tipo: c.tipo, km: c.km, min: c.min }; });
+    var largoKm = kmLarga;
+    // la semana de la carrera se cuenta como SU distancia mas los trotes de calentamiento
+    semanas.push({ n: w, km: totalKm, larga: largoKm, filas: filas, descarga: (w % 4 === 0),
+                   carrera: esCarrera ? meta.km : null });
+  }
+  var pico = 0;
+  semanas.forEach(function (s) { if (s.km > pico) pico = s.km; });
+  return { semanas: semanas, total: Math.round(pico * 10) / 10, techo: techo };
+}
+
+function diaTotal(tipos) { return tipos; }
+
+// Minutos por km de referencia solo para prescribir tiempo; el ritmo real lo manda la FC.
+// Se parte de un ritmo conservador por meta y se ajusta por nivel y por meta.
+// El entrenamiento se prescribe en TIEMPO. Los minutos se eligen para que el km que salga de ahi
+// no rebase lo que su cuerpo aguanta; nunca al reves.
+function minDeSesion(tipo, largo) {
+  var t = { larga: [30, 40, 50, 60, 75, 90, 105, 120, 135, 150],
+            facil: [20, 25, 30, 35, 40, 45, 50, 55, 60, 65],
+            regenerativo: [20, 25, 30, 30, 35, 35, 40, 40, 45, 45],
+            calidad: [25, 28, 30, 32, 34, 36, 38, 40, 42, 45] }[tipo];
+  return t[Math.max(0, Math.min(t.length - 1, largo))];
+}
+
+// Minutos por km de referencia: solo para saber si el tiempo propuesto es realista. El ritmo de la
+// calle manda la FC (zona), no este numero.
+function ritmoDe(p, tipo) {
+  var base = { '5k': 7.4, '10k': 7.7, '21k': 8.1, '42k': 8.5 }[p.metaClave || '10k'] || 7.7;
+  if (p.hist === 'constante') base -= 0.9;
+  else if (p.hist === 'algo') base -= 0.3;
+  if (p.imc && p.imc >= 30) base += 1.0;
+  else if (p.imc && p.imc >= 27) base += 0.5;
+  // la calidad se prescribe por FC y tiempo (series con trote entre medias): el ritmo
+  // medio de esa sesion es el del rodaje, no el de una carrera
+  if (tipo === 'larga') base += 0.4;
+  else if (tipo === 'calidad') base -= 0.2;
+  else if (tipo === 'regenerativo') base += 0.6;
+  return Math.max(3.5, Math.round(base * 10) / 10);
+}
+
+function num(v) {
+  if (v === null || v === undefined || v === '') return null;
+  var x = parseFloat(String(v).replace(',', '.'));
+  return isFinite(x) ? x : null;
+}
+
+function lunesDe(fecha) {
+  var d = fecha instanceof Date ? fecha : desFecha(fecha);
+  if (!d) d = new Date();
+  var dow = d.getUTCDay();                 // 0 dom .. 6 sab
+  var back = (dow + 6) % 7;                // dias desde el lunes
+  return isoFecha(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - back)));
+}
+
+function esFecha(f) { return /^\d{4}-\d{2}-\d{2}$/.test(String(f || '')); }
+function desFecha(f) {
+  if (!esFecha(f)) return null;
+  var q = String(f).split('-').map(Number);
+  return new Date(Date.UTC(q[0], q[1] - 1, q[2]));
+}
+function isoFecha(d) { return d.toISOString().slice(0, 10); }
+function hoyISO() {
+  var d = new Date();
+  return isoFecha(new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())));
+}
+
+// Pone fecha a cada semana y a cada sesion (la larga cae en el ultimo dia de la semana).
+function rellenar(plan, inicio) {
+  var base = desFecha(inicio), out = [], w;
+  for (w = 0; w < plan.semanas.length; w++) {
+    var s = plan.semanas[w], o = {};
+    for (var kk in s) if (s.hasOwnProperty(kk)) o[kk] = s[kk];
+    o.fin = isoFecha(new Date(base.getTime() + (w * 7 + 6) * 86400000));
+    o.filas = s.filas.map(function (f, idx) {
+      var oo = {};
+      for (var k2 in f) if (f.hasOwnProperty(k2)) oo[k2] = f[k2];
+      oo.fecha = isoFecha(new Date(base.getTime() + (w * 7 + (idx === f.i - 1 ? f.i - 1 : idx)) * 86400000));
+      return oo;
+    });
+    out.push(o);
+  }
+  return out;
+}
+
+  // Semana del plan que corresponde a una fecha. La semana 1 arranca el 9 nov 2026 (el plan del dueno);
+  // un corredor creado despues arranca el lunes de la semana en que se dio de alta.
   var INICIO = Date.UTC(2026, 10, 9);
+  function inicioDe(id) {
+    var e = cargar(), pl = e.planes[id];
+    if (pl && pl.inicio && esFecha(pl.inicio)) {
+      var q = pl.inicio.split('-').map(Number);
+      return Date.UTC(q[0], q[1] - 1, q[2]);
+    }
+    return INICIO;
+  }
   function semanaDe(fecha) {
     if (!esFecha(fecha)) return null;
     var p = fecha.split('-').map(Number);
@@ -224,21 +547,46 @@
     corredores: function () {
       var e = cargar(), out = [], k;
       for (k in PLANES_BASE.atletas) if (PLANES_BASE.atletas.hasOwnProperty(k)) {
+        if (e.salida && e.salida[k] === false) continue;   // se quito de la barra a proposito
         var a = atleta(k);
         out.push({ id: k, nombre: a.nombre, fcmax: a.fcmax, fc_reposo: a.fc_reposo, zonas: a.zonas,
                    carrera: a.carrera, meta: a.meta, base: true, registros: e.registro[k].length,
-                   semanas: a.semanas.length });
+                   semanas: a.semanas.length, oculto: false });
       }
       for (k in e.planes) if (e.planes.hasOwnProperty(k)) {
         var b = atleta(k);
         out.push({ id: k, nombre: b.nombre, fcmax: b.fcmax, fc_reposo: b.fc_reposo, zonas: b.zonas,
                    carrera: b.carrera, meta: b.meta, base: false, registros: e.registro[k].length,
-                   semanas: b.semanas.length });
+                   semanas: b.semanas.length, oculto: false });
       }
-      return { ok: true, corredores: out };
+      return { ok: true, corredores: out, salida: e.salida };
+    },
+
+    // ¿Este lugar sale en la barra? Sirve para poder elegir a los dos aunque uno este oculto.
+    salida: function (id) {
+      if (!idValido(id)) return { ok: false, error: 'atleta desconocido: ' + id };
+      var e = cargar();
+      return { ok: true, id: id, visible: !(e.salida && e.salida[id] === false), salida: e.salida };
+    },
+
+    // Muestra u oculta un lugar en la barra sin borrarle nada: el plan, el perfil y el registro siguen.
+    // Se guarda explicito porque si el dueño apaga los dos para prestar el telefono, la plantilla no
+    // debe reaparecer sola al recargar.
+    mostrar: function (id, visible) {
+      if (!idValido(id)) return { ok: false, error: 'atleta desconocido: ' + id };
+      var e = cargar();
+      var s = e.salida || { jonah: true, yuli: true };
+      s[id] = !(visible === false || visible === 0 || visible === 'no');
+      e.salida = s;
+      if (!guardar(e)) return { ok: false, error: 'no se pudo guardar' };
+      avisar();
+      return { ok: true, id: id, visible: s[id], salida: s };
     },
 
     // Alta de un corredor propio. Sin `id` se arma con el nombre; sin plan copia el de `copiarDe`.
+    // Alta de corredor. Dos caminos:
+    //   - con objetivo: el plan se ARMA con sus datos (semilla), no se copia el del dueno;
+    //   - sin objetivo: se copia un plan de 21 semanas existente (compatibilidad con lo de antes).
     crearCorredor: function (o) {
       o = o || {};
       var nombre = String(o.nombre || '').trim();
@@ -248,31 +596,51 @@
       if (!id) return { ok: false, error: 'no se pudo armar el id con ese nombre' };
       var e = cargar();
       if (idValido(id)) return { ok: false, error: 'ya existe el corredor ' + id };
-      var base = PLANES_BASE;
-      for (var k in e.planes) if (e.planes.hasOwnProperty(k)) if (k === (o.copiarDe || 'jonah')) base = e;
-      var origen = null;
-      if (o.copiarDe) {
-        if (e.planes[o.copiarDe]) origen = e.planes[o.copiarDe];
-        else if (PLANES_BASE.atletas[o.copiarDe]) origen = PLANES_BASE.atletas[o.copiarDe];
-        if (!origen) return { ok: false, error: 'no existe el plan a copiar: ' + o.copiarDe };
+      var plan, semanas, total, objetivo = null, base = false;
+      if (o.objetivo) {
+        var sem = Agente.semilla({
+          id: id, nombre: nombre, objetivo: o.objetivo, inicio: o.inicio,
+          kg: o.kg, cm: o.cm, edad: o.edad, fcmax: o.fcmax, fc_reposo: o.fc_reposo,
+          historial: o.historial, conversacion: o.conversacion, dias: o.dias, min: o.min,
+          molestias: o.molestias
+        });
+        if (!sem.ok) return { ok: false, error: sem.error, faltan: sem.faltan || [] };
+        semanas = sem.semanas; total = sem.km_declarado; objetivo = sem.objetivo;
+        base = !!sem.base;
       } else {
-        origen = PLANES_BASE.atletas.jonah;   // el plan del dueno de la app, sin su perfil
+        var origen = null;
+        if (o.copiarDe) {
+          origen = e.planes[o.copiarDe] || PLANES_BASE.atletas[o.copiarDe];
+          if (!origen) return { ok: false, error: 'no existe el plan a copiar: ' + o.copiarDe };
+        } else origen = PLANES_BASE.atletas.jonah;
+        semanas = JSON.parse(JSON.stringify(origen.semanas || []));
+        if (semanas.length !== 21) return { ok: false, error: 'el plan a copiar no tiene 21 semanas' };
+        total = origen.km_declarado || null;
       }
-      var plan = {
+      plan = {
         nombre: nombre, edad: num(o.edad) ? Math.round(o.edad) : null,
-        fcmax: num(o.fcmax) ? Math.round(o.fcmax) : 178,
+        fcmax: num(o.fcmax) ? Math.round(o.fcmax) : (num(o.edad) ? Math.round(208 - 0.7 * num(o.edad)) : null),
         fc_reposo: num(o.fc_reposo) ? Math.round(o.fc_reposo) : null,
-        carrera: o.carrera || null, meta: o.meta || null, notas: o.notas || null,
-        semanas: JSON.parse(JSON.stringify(origen.semanas || [])),
-        km_declarado: origen.km_declarado || null
+        kg: num(o.kg), cm: num(o.cm),
+        carrera: o.carrera || null, meta: o.meta || null, notas: o.notas || /^\s*$/.test(String(o.molestias || '')) === false ? o.molestias : (o.notas || null),
+        objetivo: objetivo, base: base,
+        inicio: o.inicio || semanas[0] && semanas[0].fin ? (semanas[0].fecha || null) : null,
+        semanas_total: semanas.length,
+        semanas: semanas, km_declarado: total
       };
-      if (plan.semanas.length !== 21) return { ok: false, error: 'el plan a copiar no tiene 21 semanas' };
+      if (!plan.inicio) {
+        // el plan trae fecha en las filas; si no, arranca el lunes de esta semana
+        var primera = semanas[0] && semanas[0].filas && semanas[0].filas[0];
+        plan.inicio = (primera && primera.fecha) || lunesDe(hoyISO());
+      }
       e.planes[id] = plan;
       e.registro[id] = []; e.ajustes[id] = [];
       if (o.perfil !== false) e.perfiles[id] = { nombre: nombre };
       if (!guardar(e)) return { ok: false, error: 'no se pudo guardar' };
       avisar();
-      return { ok: true, id: id, corredor: Agente.leer(id).atleta };
+      return { ok: true, id: id, nombre: nombre, objetivo: objetivo, base: base,
+               inicio: plan.inicio, semanas_total: semanas.length, km_declarado: total,
+               corredor: Agente.leer(id).atleta };
     },
 
     // Guarda el plan de un corredor (las 21 semanas) para que no se pierda al recargar.
@@ -756,7 +1124,61 @@
         '              {api, atleta, registro, ajustes} en cada cambio. No espera respuesta.',
         ''
       ].join('\n');
-    }
+    },
+    // ------------------------------------------------------------- el plan vive aqui
+    // Un corredor nuevo no hereda las 21 semanas de otro: se arma desde sus datos y su meta.
+    // Reglas (running-coach + references/planes-otras-distancias.md):
+    //   - rampa +10 % por semana y solo si la anterior quedo limpia, descarga ~30 % cada 4;
+    //   - una sola calidad por semana, 48 h antes de la larga;
+    //   - la larga nunca pasa de 30 % del volumen semanal;
+    //   - el techo lo pone el punto de partida (IMC, historial, nivel de partida), no la meta que elige;
+    //   - sin historial: no se le manda a la calle sin antes poder correr 20 min seguido.
+    // Nada de esto adivina un ritmo: se prescribe por zona de FC + tiempo.
+    semilla: function (o) {
+      o = o || {};
+      var meta = String(o.objetivo || o.meta || '').trim();
+      var r = preparar(meta, o);
+      if (!r.ok) return r;
+      var id = String(o.id || o.nombre || 'corredor').toLowerCase().normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-|-$/g, '').slice(0, 24);
+      var inicio = o.inicio || lunesDe(hoyISO());
+      if (!esFecha(inicio)) return { ok: false, error: 'fecha de inicio invalida' };
+      var semanas = rellenar(r.plan, inicio);
+      return { ok: true, id: id, objetivo: r.meta.clave, inicio: inicio,
+               semanas_total: semanas.length, km_declarado: r.plan.total,
+               imc: r.perfil.imc, nivel: r.perfil.hist, fcmax: r.perfil.fcmax,
+               faltan: r.perfil.faltan, base: r.base, caminata: r.perfil.caminata, notas: r.perfil.notas, semanas: semanas };
+    },
+
+    // Siguiente paso cuando faltan datos: pocos y en orden. No se pide todo de golpe.
+    semillaPasos: function (faltan, base) {
+      var f = faltan || [];
+      if (base) {
+        return ['Primero las 4-6 semanas para poder correr 20 minutos seguidos (3 salidas: trote-caminata, ' +
+                'la mas larga 30 min). Despues de esa base se arma el plan de la meta que elijas.'];
+      }
+      var pasos = [];
+      if (f.indexOf('fc_reposo') >= 0) {
+        pasos.push('FC en reposo: 3 mananas seguidas, tumbado al despertar, antes de levantarte y sin hablar.');
+      }
+      if (f.indexOf('fcmax') >= 0) {
+        pasos.push('FC maxima: la del reloj en los ultimos 30 s de una salida fuerte; si no la hay, se estima ' +
+                   '(Tanaka, marcada como estimacion) y las zonas se usan como techo.');
+      }
+      if (f.indexOf('historial') >= 0) {
+        pasos.push('Si hay reloj, 2-3 capturas de Garmin (Informes -> Progreso, filtrado a Carrera): ' +
+                   'salidas y km de los ultimos 2 anos, la salida mas larga y el ritmo medio. Cambian el techo.');
+      }
+      if (f.indexOf('nivel') >= 0) {
+        pasos.push('Prueba de conversacion: correr 20 minutos y decir una frase completa. Si se puede, el plan ' +
+                   'arranca corriendo; si no, trote-caminata.');
+      }
+      if (f.indexOf('dias') >= 0) pasos.push('Dias reales por semana y minutos por sesion.');
+      if (f.indexOf('molestias') >= 0) pasos.push('Molestias o lesiones previas (rodilla, planta del pie, espalda, cadera).');
+      if (f.indexOf('tenis') >= 0) pasos.push('Tenis de correr (no de gimnasio) y por donde va a correr.');
+      return pasos;
+    },
   };
 
   function avisar() {
