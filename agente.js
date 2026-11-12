@@ -267,6 +267,48 @@
       };
     },
 
+    // Lectura del registro para el feedback: ritmo, comparacion con la semana previa
+    // y si la sesion cabe en el plan (km de la semana, techo de pulso).
+    balance: function (id, fecha) {
+      if (!idValido(id)) return { ok: false, error: 'atleta desconocido: ' + id };
+      fecha = fecha || hoyISO();
+      if (!esFecha(fecha)) return { ok: false, error: 'fecha invalida: ' + fecha };
+      var a = atleta(id), e = cargar(), n = semanaDe(fecha), f = filaSemana(id, n);
+      var reg = e.registro[id];
+      function norm(r) {
+        var k = Number(r.km) || 0, m = Number(r.min) || 0;
+        return { fecha: r.fecha, tipo: r.tipo, km: k, min: m, ritmo: k > 0 && m > 0 ? m / k : null,
+                 fc_media: r.fc_media == null ? null : Number(r.fc_media),
+                 fc_max: r.fc_max == null ? null : Number(r.fc_max), zona: r.zona || '' };
+      }
+      var esta = reg.filter(function (r) { return semanaDe(r.fecha) === n; }).map(norm);
+      var prev = reg.filter(function (r) { return semanaDe(r.fecha) === n - 1; }).map(norm);
+      function suma(xs, k) { return xs.reduce(function (s, x) { return s + (Number(x[k]) || 0); }, 0); }
+      function ritmoMed(xs) {
+        var k = suma(xs, 'km'), m = suma(xs, 'min');
+        return k > 0 && m > 0 ? m / k : null;
+      }
+      var hechas = {}; esta.forEach(function (r) { hechas[r.tipo] = r; });
+      var pendientes = ['calidad', 'facil', 'larga'].filter(function (t) { return !hechas[t]; });
+      var techo = a.zonas && a.zonas.Z2 ? a.zonas.Z2[1] : null;
+      var kmHechos = suma(esta, 'km'), pct = f && f.km ? Math.round(kmHechos / f.km * 100) : null;
+      var avisos = [];
+      if (f) {
+        if (kmHechos > f.km * 1.15) avisos.push('la semana va por ' + kmHechos.toFixed(1) + ' km contra ' + f.km + ' del plan: si te sientes cargado, baja la siguiente');
+        else if (pct != null && esta.length >= 2 && pct < 50 && pendientes.length === 0) avisos.push('quedaste corto: ' + kmHechos.toFixed(1) + ' de ' + f.km + ' km, la siguiente no se sube');
+        if (pendientes.length) avisos.push('faltan: ' + pendientes.join(', ') + ' (si el dia ya paso, se camina o se mueve, no se pega al siguiente)');
+      }
+      var altas = esta.filter(function (r) { return techo && r.fc_max && r.fc_max > techo; });
+      if (altas.length) avisos.push(altas.length + ' sesion(es) pasaron el techo de Z2 (' + techo + '): esas son las que piden mas recuperacion');
+      var rEsta = ritmoMed(esta), rPrev = ritmoMed(prev);
+      var delta = rEsta && rPrev ? Math.round((rEsta - rPrev) * 60) : null;   // seg/km, negativo = mas rapido
+      if (delta != null && delta <= -15 && esta.length >= 2) avisos.push('vas ' + Math.abs(delta) + ' s/km mas rapido que la semana pasada con ' + esta.length + ' sesiones: bien, pero sin subir km a la vez');
+      return { ok: true, semana: n, fila: f, esta: esta, previa: prev, kmHechos: kmHechos, kmPrevios: suma(prev, 'km'),
+        horasHechas: Math.round(suma(esta, 'min') / 6) / 10, horasPrevias: Math.round(suma(prev, 'min') / 6) / 10,
+        pct: pct, ritmo: rEsta, ritmoPrev: rPrev, deltaSeg: delta, pendientes: pendientes, avisos: avisos,
+        proxima: filaSemana(id, Math.min(21, n + 1)) };
+    },
+
     // Guarda una sesion hecha. Valida todo antes de escribir: si algo no cuadra, no entra nada.
     registrar: function (id, s) {
       if (!idValido(id)) return { ok: false, error: 'atleta desconocido: ' + id };
@@ -432,7 +474,7 @@
       return {
         api: VERSION,
         almacen: CLAVE,
-        funciones: ['atletas', 'leer', 'zonas', 'sesionDeHoy', 'registrar', 'borrar',
+        funciones: ['atletas', 'leer', 'zonas', 'sesionDeHoy', 'balance', 'registrar', 'borrar',
                     'ajustarSemana', 'perfil', 'reiniciar', 'exportar', 'importar',
                     'webhook', 'docs', 'aplicarHash'],
         sesion: ['fecha AAAA-MM-DD', 'tipo: calidad|facil|larga|fuerza|carrera|otro', 'km', 'min',
@@ -453,6 +495,7 @@
         '  Agente.leer("jonah")              -> { ok, atleta, semanas[21], registro[], ajustes[] }',
         '  Agente.zonas("jonah")             -> { ok, fcmax, zonas:{Z1:[lo,hi],...} }',
         '  Agente.sesionDeHoy("jonah")       -> { ok, semana, fila, pendientes[], sugerida }',
+        '  Agente.balance("jonah")           -> { ok, kmHechos, pct, ritmo, deltaSeg, pendientes[], avisos[] }',
         '',
         'ESCRITURA',
         '  Agente.registrar("jonah", {fecha:"2026-11-11", tipo:"facil", km:4, min:32,',

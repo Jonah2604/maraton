@@ -185,6 +185,12 @@
       <div id="rLista" style="margin-top:10px"></div>
     </div>
     <div class="card">
+      <div class="fila"><h2 style="margin:0">Cómo va la semana</h2><span class="chip" id="fSem">–</span></div>
+      <div class="chips" id="fChips" style="margin-top:8px"></div>
+      <div class="peq" id="fTxt" style="margin-top:8px"></div>
+      <div id="fAvisos"></div>
+    </div>
+    <div class="card">
       <h2>Resumen</h2>
       <div class="chips" id="rResumen"></div>
     </div>
@@ -296,6 +302,7 @@
   var UI = 'maraton.ui.v1';
   var atleta = 'jonah';
   var vista = 'Hoy';
+  var tipoImp = 'facil', impActual = null;
 
   function $(s) { return document.querySelector(s); }
   function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, function (c) {
@@ -434,8 +441,34 @@
   }
 
   // -------------------------------------------------------------- registro
+  function pintarFeedback() {
+    var b = A.balance(atleta);
+    if (!b.ok) { $('#fTxt').textContent = b.error; return; }
+    $('#fSem').textContent = 'Semana ' + b.semana + ' de 21';
+    var kmPlan = b.fila ? b.fila.km : null;
+    function ritmoTxt(m) { if (!m) return '–'; var mm = Math.floor(m), ss = Math.round((m - mm) * 60); return mm + ':' + (ss < 10 ? '0' : '') + ss; }
+    $('#fChips').innerHTML =
+      '<span class="chip">Km <b>' + b.kmHechos.toFixed(1) + '</b>' + (kmPlan != null ? ' / ' + kmPlan : '') + '</span>' +
+      '<span class="chip">Ritmo <b>' + ritmoTxt(b.ritmo) + '</b>/km</span>' +
+      '<span class="chip">Horas <b>' + b.horasHechas.toFixed(1) + '</b></span>';
+    var lineas = [];
+    if (b.deltaSeg != null) lineas.push(b.deltaSeg < 0
+      ? 'Vas ' + Math.abs(b.deltaSeg) + ' s/km más rápido que la semana pasada (' + ritmoTxt(b.ritmoPrev) + ' → ' + ritmoTxt(b.ritmo) + ').'
+      : 'Vas ' + b.deltaSeg + ' s/km más lento que la semana pasada (' + ritmoTxt(b.ritmoPrev) + ' → ' + ritmoTxt(b.ritmo) + ').');
+    else if (b.ritmo) lineas.push('Ritmo medio de la semana: ' + ritmoTxt(b.ritmo) + '/km.');
+    if (b.previa && b.previa.length) lineas.push('Semana pasada: ' + b.kmPrevios.toFixed(1) + ' km en ' + b.previa.length + ' sesiones.');
+    else lineas.push('Sin sesiones la semana pasada: esta es la primera referencia.');
+    $('#fTxt').textContent = lineas.join(' ');
+    var av = b.avisos.slice();
+    av.push(b.pendientes.length ? 'Pendiente: ' + b.pendientes.join(', ') + '.'
+      : 'Las tres de la semana están hechas.');
+    if (b.proxima) av.push('Siguiente (' + b.proxima.fechas + '): ' + b.proxima.km + ' km, larga de ' + b.proxima.larga + ' km.');
+    $('#fAvisos').innerHTML = av.map(function (t) { return '<div class="peq">• ' + esc(t) + '</div>'; }).join('');
+  }
+
   function pintarReg() {
     var d = A.leer(atleta), reg = d.registro.slice().reverse();
+    pintarFeedback();
     if (!reg.length) {
       $('#rLista').innerHTML = '<p class="peq">Todavía no hay sesiones anotadas. Usa «+ Sesión».</p>';
     } else {
@@ -741,10 +774,36 @@
       var min = iM >= 0 ? Math.round(Number(String(c[iM]).replace(/[^0-9.]/g, '')) / 60) : null;
       var fc = iH >= 0 ? Number(String(c[iH]).replace(/"/g, '')) : null;
       if (!km) continue;
-      var r = A.registrar(atleta, { fecha: fecha, tipo: tipo, km: km, min: min, fc_media: fc });
-      if (r.ok) hechas++;
+      if (guardarActividad({ fecha: fecha, tipo: tipo, km: km, min: min,
+        fc_media: fc, fc_max: null }, false).ok) hechas++;
     }
     return { ok: true, km: null, min: null, fc: null, hechas: hechas, vistas: vistas };
+  }
+
+  // El archivo no dice si fue calidad, larga o facil: lo elige quien importa antes de guardar.
+  var TIPOS_ARCHIVO = [['facil','Fácil'], ['calidad','Calidad'], ['larga','Larga'],
+                       ['fuerza','Fuerza'], ['carrera','Carrera'], ['otro','Otro']];
+  function elegirTipo(tipo) {
+    tipoImp = tipo || 'facil';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-imp]'), function (b) {
+      b.classList.toggle('pri', b.dataset.imp === tipoImp);
+    });
+    var dup = A.leer(atleta).registro.some(function (s) { return s.fecha === impActual.fecha && s.tipo === tipoImp; });
+    var bOk = document.getElementById('bImpOk');
+    if (bOk) {
+      bOk.style.display = dup ? 'none' : '';
+      bOk.textContent = 'Guardar como ' + (tipoImp === 'facil' ? 'fácil' : tipoImp);
+    }
+    var av = document.getElementById('iDup');
+    if (av) av.style.display = dup ? '' : 'none';
+    return { dup: dup };
+  }
+  // Un solo camino para guardar lo importado: si el dia ya tiene ese tipo, no entra.
+  function guardarActividad(r, manual) {
+    var dup = A.leer(atleta).registro.some(function (s) { return s.fecha === r.fecha && s.tipo === r.tipo; });
+    if (dup && !manual) return { ok: false, error: 'Ese dia ya tiene una sesion de ' + r.tipo };
+    return A.registrar(atleta, { fecha: r.fecha, tipo: r.tipo, km: r.km, min: r.min,
+      fc_media: r.fc_media, fc_max: r.fc_max, zona: r.zona });
   }
   function importarActividad(txt, nombre) {
     var x = /<\?xml/i.test(txt.slice(0, 200));
@@ -755,7 +814,6 @@
     if (r.error) return r;
     if (r.hechas !== undefined) return r;
     if (!r.fecha) r.fecha = A.hoy();
-    r.tipo = 'facil';
     r.zona = rangoZona(r.fc && r.fc.media);
     return r;
   }
@@ -771,21 +829,30 @@
       pintarTodo();
       return;
     }
+    impActual = r;
     var partes = [];
     if (r.km != null) partes.push(Number(r.km).toFixed(2) + ' km');
     if (r.min != null) partes.push(r.min + ' min');
     if (r.fc && r.fc.media) partes.push('FC ' + r.fc.media + (r.fc.max ? '/' + r.fc.max : '') + (r.zona ? ' · ' + r.zona : ''));
-    var dup = A.leer(atleta).registro.some(function (s) { return s.fecha === r.fecha && s.tipo === 'facil'; });
+    var botones = '<div class="fila" style="flex-wrap:wrap;gap:6px">' +
+      TIPOS_ARCHIVO.map(function (t) {
+        return '<button class="bt mini" data-imp="' + t[0] + '">' + t[1] + '</button>';
+      }).join('') + '</div>';
     caja.innerHTML =
       '<span class="chip">' + esc(nombre) + '</span>' +
       '<span class="chip">' + esc(r.fecha) + '</span>' +
       '<span class="chip">' + esc(partes.join(' · ') || 'sin datos') + '</span>' +
-      (dup ? '<span class="chip">ya hay una fácil ese día</span>'
-           : '<button class="bt mini pri" id="bImpOk">Guardar como fácil</button>');
-    var b = document.getElementById('bImpOk');
-    if (b) b.onclick = function () {
-      var x = A.registrar(atleta, { fecha: r.fecha, tipo: 'facil', km: r.km, min: r.min,
-        fc_media: r.fc && r.fc.media, fc_max: r.fc && r.fc.max, zona: r.zona });
+      botones +
+      '<button class="bt mini pri" id="bImpOk">Guardar como fácil</button>' +
+      '<span class="chip" id="iDup" style="display:none">ese dia ya tiene sesion de ese tipo</span>';
+    Array.prototype.forEach.call(caja.querySelectorAll('[data-imp]'), function (b) {
+      b.onclick = function () { elegirTipo(b.dataset.imp); };
+    });
+    elegirTipo(tipoImp);
+    document.getElementById('bImpOk').onclick = function () {
+      var x = guardarActividad({ fecha: impActual.fecha, tipo: tipoImp, km: impActual.km,
+        min: impActual.min, fc_media: impActual.fc && impActual.fc.media,
+        fc_max: impActual.fc && impActual.fc.max, zona: impActual.zona }, false);
       caja.innerHTML = '<span class="chip">' + (x.ok ? 'Importada ✅' : esc(x.error)) + '</span>';
       pintarTodo();
     };
