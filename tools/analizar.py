@@ -1,0 +1,239 @@
+"""Analiza los entrenamientos reales contra el plan y propone el ajuste de la semana.
+
+Entrada: el JSON que exporta la app (Agente -> Exportar), completo o de un atleta.
+  python analizar.py <export.json> [--atleta jonah] [--aplicar]
+
+Sin --aplicar solo informa (reporte en pantalla + tools/ultimo_analisis.md).
+Con --aplicar escribe el cambio en la tabla del vault y regenera la app.
+
+Reglas (conservadoras a proposito: hay ciatica, tobillo y rodilla en el historial):
+  cumplio >=95% y sin molestias      -> la siguiente sigue como esta
+  cumplio 70-95%                     -> la siguiente repite el km, no sube
+  <70% o falto la larga              -> la siguiente baja 10% y sin calidad nueva
+  excede 115% del plan               -> la siguiente no sube y se recorta 10%
+  molestia seria o dolor que irradia -> congela: sin subir volumen, a valoracion
+  FC media de las faciles sobre Z2   -> no sube volumen aunque haya cumplido
+"""
+import json
+import sys
+from datetime import date, timedelta
+from pathlib import Path
+
+APP = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP / "tools"))
+
+INICIO = date(2026, 11, 9)
+VAULT = Path(r"C:\Users\chris\Documents\Obsidian\Jonah\02 - Proyectos")
+NOTAS = {"jonah": VAULT / "Maraton - plan 21 semanas.md",
+         "yuli": VAULT / "Maraton - plan de Yuli.md"}
+TECHOS = {"jonah": 134, "yuli": 136}          # techo de Z2, de las notas de zonas
+DURAS = {"calidad", "larga", "carrera"}
+PALABRA_RIESGO = ("irradia", "hacia la pierna", "hormigueo", "adormec", "punzada",
+                  "no puedo apoyar", "hinchado", "clavada")
+
+
+def semana_de(f):
+    return max(1, min(21, (f - INICIO).days // 7 + 1))
+
+
+def parse_fecha(s):
+    try:
+        return date.fromisoformat(s)
+    except Exception:
+        return None
+
+
+def ritmo(min_, km):
+    if km and min_:
+        s = min_ * 60 / km
+        return f"{int(s // 60)}:{int(s % 60):02d}"
+    return "—"
+
+
+def carga_export(ruta):
+    d = json.loads(Path(ruta).read_text(encoding="utf-8-sig"))
+    if "atletas" in d:                       # paquete completo
+        return {k: v for k, v in d["atletas"].items()}, d.get("registro", {})
+    if "atleta" in d:                        # export de un atleta
+        aid = d["atleta"].get("id")
+        return {aid: {**d["atleta"], "semanas": d.get("semanas", [])}}, {aid: d.get("registro", [])}
+    raise SystemExit("no reconozco el JSON: falta 'atletas' o 'atleta'")
+
+
+def analiza(aid, plan, registro, hoy, forzar_semana=None):
+    semanas = {s["n"]: s for s in plan.get("semanas", [])}
+    n = forzar_semana or semana_de(hoy)
+    sem = semanas.get(n, {})
+    filas = []
+    for r in registro:
+        f = parse_fecha(r.get("fecha", ""))
+        if not f:
+            continue
+        filas.append({**r, "_f": f, "_sem": semana_de(f)})
+    filas.sort(key=lambda r: r["_f"])
+
+    esta = [r for r in filas if r["_sem"] == n]
+    prev = [r for r in filas if r["_sem"] == n - 1]
+    km = round(sum(float(r.get("km") or 0) for r in esta), 1)
+    km_prev = round(sum(float(r.get("km") or 0) for r in prev), 1)
+    plan_km = float(sem.get("km") or 0) or None
+    pct = round(km / plan_km * 100) if plan_km else None
+    tipos = {r.get("tipo") for r in esta}
+    faltan = [t for t in ("calidad", "larga") if t not in tipos]
+    techo = TECHOS.get(aid, 140)
+
+    faciles = [r for r in esta if r.get("tipo") == "facil" and r.get("fc_media")]
+    fc_alta = [r for r in faciles if float(r["fc_media"]) > techo]
+    molestias = [r for r in esta if (r.get("molestia") or "").strip()]
+    graves = [r for r in molestias
+              if any(p in (r.get("molestia") or "").lower() for p in PALABRA_RIESGO)]
+    esf_max = max([int(float(r.get("esf") or 0)) for r in esta], default=0)
+
+    fin_semana = INICIO + timedelta(days=n * 7 - 1)      # domingo de esa semana
+    cerrada = hoy >= fin_semana      # el domingo por la noche ya se revisa la semana
+    banderas, decision, cambios = [], "seguir", {}
+
+    if graves:
+        decision = "congelar"
+        banderas.append("molestia con palabras de riesgo: " + graves[0]["molestia"][:120])
+    elif pct is None:
+        decision = "seguir"
+    elif pct > 115:
+        decision = "recortar"
+        banderas.append(f"{km} km contra {plan_km} del plan ({pct}%): te pasaste de carga")
+    elif pct < 70 or (faltan and "larga" in faltan and n == semana_de(hoy)):
+        decision = "bajar"
+        banderas.append(f"cumpliste {km} de {plan_km} km ({pct}%)" +
+                        (f"; falto {', '.join(faltan)}" if faltan else ""))
+    elif pct < 95:
+        decision = "repetir"
+        banderas.append(f"cumpliste {pct}% del plan")
+    if fc_alta:
+        banderas.append(f"{len(fc_alta)} facil(es) con FC media sobre el techo de Z2 ({techo}): "
+                        + ", ".join(f"{r['fecha']} {int(r['fc_media'])}" for r in fc_alta))
+        if decision == "seguir":
+            decision = "repetir"
+    if esf_max >= 9:
+        banderas.append(f"esfuerzo {esf_max}/10 reportado")
+
+    if not cerrada and decision != "congelar":
+        # la semana sigue abierta: se informa, no se toca el plan
+        if decision != "seguir":
+            banderas.append(f"semana abierta (cierra el {fin_semana.isoformat()}): con esto iria '{decision}', "
+                            "pero no se ajusta hasta el domingo")
+        decision = "abierta"
+
+    sig = semanas.get(n + 1)
+    if sig and decision not in ("seguir", "abierta"):
+        base_km = float(sig.get("km") or 0)
+        base_larga = float(sig.get("larga") or 0)
+        if decision == "congelar":
+            cambios = {"km": base_km, "larga": base_larga, "calidad": "sin calidad",
+                       "nota": f"CONGELADA por molestia ({hoy.isoformat()}): no sube volumen hasta valoracion"}
+        elif decision == "recortar":
+            cambios = {"km": round(base_km * 0.9, 1), "larga": round(base_larga * 0.9, 1),
+                       "calidad": sig.get("calidad"),
+                       "nota": f"Recortada 10% ({hoy.isoformat()}): la semana previa paso de 115%"}
+        elif decision == "bajar":
+            cambios = {"km": round(base_km * 0.9, 1), "larga": round(base_larga * 0.9, 1),
+                       "calidad": "sin calidad",
+                       "nota": f"Baja 10% y sin calidad nueva ({hoy.isoformat()}): la previa quedo corta"}
+        elif decision == "repetir":
+            cambios = {"km": base_km, "larga": base_larga, "calidad": sig.get("calidad"),
+                       "nota": f"Repite volumen ({hoy.isoformat()}): no se sube hasta cerrar una semana limpia"}
+
+    return {"atleta": aid, "semana": n, "fechas": sem.get("fechas"), "plan": sem, "hecho": esta,
+            "km": km, "km_prev": km_prev, "pct": pct, "faltan": faltan,
+            "fc_alta": [r["fecha"] for r in fc_alta], "molestias": [r.get("molestia") for r in molestias],
+            "banderas": banderas, "decision": decision, "cambios": cambios,
+            "siguiente": sig.get("n") if sig else None}
+
+
+def texto(r):
+    L = [f"## {r['atleta'].title()} — semana {r['semana']} ({r['fechas']})", ""]
+    p = r["plan"]
+    L.append(f"Plan: {p.get('km')} km, larga {p.get('larga')} km, calidad: {p.get('calidad')}")
+    L.append(f"Hecho: {r['km']} km ({r['pct']}% del plan)" +
+             (f", semana previa {r['km_prev']} km" if r["km_prev"] else ""))
+    L.append("")
+    if r["hecho"]:
+        L.append("| Fecha | Tipo | Km | Min | Ritmo | FC media/max | Zona | Esf | Molestia |")
+        L.append("|---|---|---|---|---|---|---|---|---|")
+        for s in r["hecho"]:
+            L.append(f"| {s['fecha']} | {s.get('tipo')} | {s.get('km')} | {s.get('min')} | "
+                     f"{ritmo(float(s.get('min') or 0), float(s.get('km') or 0))} | "
+                     f"{s.get('fc_media') or '—'}/{s.get('fc_max') or '—'} | {s.get('zona') or '—'} | "
+                     f"{s.get('esf') or '—'} | {(s.get('molestia') or '').strip() or '—'} |")
+    else:
+        L.append("Sin sesiones registradas esta semana.")
+    L += ["", f"**Decision: {r['decision']}**"]
+    if r["banderas"]:
+        L += [f"- {b}" for b in r["banderas"]]
+    if r["cambios"]:
+        c = r["cambios"]
+        L.append(f"- Semana {r['siguiente']}: {c['km']} km, larga {c['larga']} km, {c['calidad']}")
+    L.append("")
+    return "\n".join(L)
+
+
+def aplicar(aid, r):
+    import re
+    nota = NOTAS[aid]
+    txt = nota.read_text(encoding="utf-8")
+    n = r["siguiente"]
+    c = r["cambios"]
+    pat = re.compile(rf"^\|\s*{n}\s*\|[^\n]*$", re.M)
+    m = pat.search(txt)
+    if not m:
+        print(f"AVISO: no encontre la fila de la semana {n} en {nota.name}")
+        return False
+    copia = nota.with_suffix(nota.suffix + ".bak")
+    copia.write_text(txt, encoding="utf-8")          # copia antes de tocar el vault
+    celdas = [x.strip() for x in m.group(0).strip().strip("|").split("|")]
+    celdas[2] = f"{c['km']:g}"
+    celdas[3] = f"{c['larga']:g}"
+    celdas[4] = c["calidad"]
+    celdas[5] = c["nota"]
+    nueva = "| " + " | ".join(celdas) + " |"
+    nota.write_text(txt[:m.start()] + nueva + txt[m.end():], encoding="utf-8")
+    print(f"vault: semana {n} de {aid} -> {nueva}")
+    return True
+
+
+def main():
+    if len(sys.argv) < 2:
+        raise SystemExit(__doc__)
+    planes, registro = carga_export(sys.argv[1])
+    solo = None
+    if "--atleta" in sys.argv:
+        solo = sys.argv[sys.argv.index("--atleta") + 1]
+    hoy = date.today()
+    if "--hoy" in sys.argv:
+        hoy = date.fromisoformat(sys.argv[sys.argv.index("--hoy") + 1])
+    forzar = None
+    if "--semana" in sys.argv:
+        forzar = int(sys.argv[sys.argv.index("--semana") + 1])
+    outs, salida = [], ["# Analisis de entrenamientos", f"Fecha: {hoy.isoformat()}", ""]
+    for aid, plan in planes.items():
+        if solo and aid != solo:
+            continue
+        if not plan.get("semanas"):
+            continue
+        r = analiza(aid, plan, registro.get(aid, []), hoy, forzar)
+        outs.append(r)
+        salida.append(texto(r))
+    reporte = "\n".join(salida)
+    destino = APP / "tools" / "ultimo_analisis.md"
+    destino.write_text(reporte, encoding="utf-8")
+    print(reporte)
+    print(f"(reporte en {destino})")
+    if "--aplicar" in sys.argv:
+        for r in outs:
+            if r["cambios"]:
+                aplicar(r["atleta"], r)
+        import subprocess
+        subprocess.run([sys.executable, str(APP / "tools" / "generar_plan.py")], check=False)
+
+
+if __name__ == "__main__":
+    main()
