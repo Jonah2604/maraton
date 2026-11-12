@@ -120,6 +120,11 @@
   .dias button.hoy{border-color:var(--azul)}
   .dias button .pt{display:block;width:5px;height:5px;border-radius:50%;background:var(--azul);margin:3px auto 0}
   .sep{height:1px;background:var(--linea);margin:14px 0}
+  .sesion{cursor:pointer}
+  .paso{display:grid;grid-template-columns:96px 1fr;gap:10px;padding:9px 0;border-bottom:1px solid var(--linea)}
+  .paso:last-child{border-bottom:0}
+  .paso .k{font-size:11.5px;font-weight:700;color:var(--tenue);letter-spacing:.3px;text-transform:uppercase;padding-top:2px}
+  .paso .v{font-size:14px;line-height:1.45}
   .oculto{display:none!important}
 </style>
 </head>
@@ -148,10 +153,11 @@
     <div class="card">
       <h2>Las tres de esta semana</h2>
       <div id="hSesiones"></div>
-      <div class="sesion fac" id="hFacil">
+      <div class="sesion fac" id="hFacil" data-ficha="facil">
         <div class="t">Fácil<button class="bt mini" data-reg="facil">Hacer</button></div>
         <div class="d">45-60 min en Z2, se puede hablar en frases completas.</div>
       </div>
+      <p class="peq">Toca una sesión para ver cómo se hace, en qué pulso y cuándo se corta.</p>
     </div>
 
     <div class="card">
@@ -294,6 +300,19 @@
   </div>
 </div>
 
+<!-- hoja de detalle de una sesion -->
+<div class="hoja" id="ficha">
+  <div class="caja">
+    <div class="fila"><b style="font-size:16px" id="dTitulo">Sesión</b>
+      <button class="bt mini" id="dCerrar">Cerrar</button></div>
+    <div class="chips" id="dChips" style="margin-top:8px"></div>
+    <p class="peq" id="dResumen" style="margin:8px 0 2px"></p>
+    <div id="dPasos"></div>
+    <div id="dAvisos" style="margin-top:6px"></div>
+    <button class="bt pri" style="width:100%;margin-top:12px" id="dHacer">Anotar esta sesión</button>
+  </div>
+</div>
+
 <script src="agente.js"></script>
 <script>
 (function () {
@@ -381,11 +400,11 @@
 
     var cal = hechas.calidad, lar = hechas.larga, fac = hechas.facil;
     $('#hSesiones').innerHTML =
-      '  <div class="sesion cal ' + (cal ? 'hecha' : '') + '">' +
+      '  <div class="sesion cal ' + (cal ? 'hecha' : '') + '" data-ficha="calidad">' +
       '    <div class="t">Calidad' + (cal ? ' ✅' : '') +
       '      <button class="bt mini" data-reg="calidad">' + (cal ? 'Otra' : 'Hacer') + '</button></div>' +
       '    <div class="d">' + esc(f.calidad) + ' · con fuerza 15-20 min al final</div></div>' +
-      '  <div class="sesion lar ' + (lar ? 'hecha' : '') + '">' +
+      '  <div class="sesion lar ' + (lar ? 'hecha' : '') + '" data-ficha="larga">' +
       '    <div class="t">Larga · ' + f.larga + ' km' + (lar ? ' ✅' : '') +
       '      <button class="bt mini" data-reg="larga" data-km="' + f.larga + '">' + (lar ? 'Otra' : 'Hacer') + '</button></div>' +
       '    <div class="d">Z2 · si el terreno trae cuestas, se camina la subida</div></div>';
@@ -405,6 +424,14 @@
       b.onclick = function (ev) {
         ev.stopPropagation();
         abrirRegistro(b.dataset.reg, b.dataset.km);
+      };
+    });
+
+    // Tocar la tarjeta (fuera del boton) abre la ficha de esa sesion.
+    Array.prototype.forEach.call(document.querySelectorAll('[data-ficha]'), function (el) {
+      el.onclick = function (ev) {
+        if (ev.target.closest('[data-reg]')) return;
+        abrirFicha(el.dataset.ficha);
       };
     });
   }
@@ -557,6 +584,30 @@
   }
   function cerrarRegistro() { $('#hoja').classList.remove('abierta'); }
 
+  // ------------------------------------------------------- ficha de la sesion
+  var fichaActual = null;
+  function abrirFicha(tipo) {
+    var r = A.ficha(atleta, tipo, diaActivo());
+    if (!r.ok) { alert(r.error); return; }
+    fichaActual = r;
+    $('#dTitulo').textContent = r.titulo;
+    $('#dChips').innerHTML =
+      '<span class="chip">Semana ' + r.semana + ' de 21</span>' +
+      '<span class="chip">' + esc(r.fila.fechas) + '</span>' +
+      '<span class="chip">Semana <b>' + r.fila.km + '</b> km</span>';
+    $('#dResumen').textContent = r.resumen;
+    $('#dPasos').innerHTML = r.pasos.map(function (p) {
+      return '<div class="paso"><div class="k">' + esc(p.k) + '</div>' +
+             '<div class="v">' + esc(p.v) + '</div></div>';
+    }).join('');
+    $('#dAvisos').innerHTML = r.avisos.map(function (t) {
+      return '<div class="peq">• ' + esc(t) + '</div>';
+    }).join('');
+    $('#dHacer').textContent = r.hecha ? 'Anotar otra vez' : 'Anotar esta sesión';
+    $('#ficha').classList.add('abierta');
+  }
+  function cerrarFicha() { $('#ficha').classList.remove('abierta'); }
+
   function zonaEnVivo() {
     var v = $('#fFcm').value;
     if (v === '') { $('#fZona').textContent = '–'; return; }
@@ -568,6 +619,14 @@
   // ---------------------------------------------------------------- eventos
   $('#bCerrar').onclick = cerrarRegistro;
   $('#hoja').onclick = function (e) { if (e.target === $('#hoja')) cerrarRegistro(); };
+  $('#dCerrar').onclick = cerrarFicha;
+  $('#ficha').onclick = function (e) { if (e.target === $('#ficha')) cerrarFicha(); };
+  $('#dHacer').onclick = function () {
+    var t = fichaActual ? fichaActual.tipo : 'facil';
+    var km = fichaActual && t === 'larga' ? fichaActual.fila.larga : '';
+    cerrarFicha();
+    abrirRegistro(t, km);
+  };
   $('#fFcm').oninput = zonaEnVivo;
   $('#bNueva').onclick = function () { abrirRegistro('facil'); };
 

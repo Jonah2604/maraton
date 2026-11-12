@@ -470,11 +470,92 @@
       return f(ini) + '-' + f(fin);
     },
 
+    // Ficha de una sesion: que se hace, en que pulso, cuando se corta y que se anota.
+    // Es dato puro, sin pantalla: la app y el agente leen lo mismo.
+    ficha: function (id, tipo, fecha) {
+      if (!idValido(id)) return { ok: false, error: 'atleta desconocido: ' + id };
+      fecha = fecha || hoyISO();
+      if (!esFecha(fecha)) return { ok: false, error: 'fecha invalida: ' + fecha };
+      tipo = String(tipo || '').toLowerCase();
+      if (['calidad', 'facil', 'larga'].indexOf(tipo) < 0) {
+        return { ok: false, error: 'tipo invalido: usa calidad, facil o larga' };
+      }
+      var a = atleta(id), n = semanaDe(fecha), f = filaSemana(id, n);
+      if (!f) return { ok: false, error: 'semana fuera del plan' };
+      var z = a.zonas, z2 = z.Z2, z5 = z.Z5;
+      var e = cargar();
+      var hecha = e.registro[id].filter(function (r) {
+        return semanaDe(r.fecha) === n && r.tipo === tipo;
+      })[0] || null;
+      var quedan = Math.round((f.km - f.larga) * 10) / 10;   // km fuera de la larga
+      var pasos = [];
+
+      if (tipo === 'calidad') {
+        var trabajo = String(f.calidad || '');
+        pasos = [
+          ['Objetivo', 'ganar velocidad sin sumar volumen: es la sesión que más se nota y la que más se paga si se hace de más.'],
+          ['Calentamiento', '10-15 min en Z2 (' + z2[0] + '-' + z2[1] + ') y 4 rectas de 20 s con 40 s de pausa.'],
+          ['Trabajo', trabajo.charAt(0).toUpperCase() + trabajo.slice(1) + '.'],
+          ['Pulso', 'los tramos fuertes hasta ' + z5[1] + ' (Z5); la recuperación suave, hasta bajar de ' + z2[1] + '.'],
+          ['Fuerza', '15-20 min al final: sentadilla, puente de glúteo, plancha lateral y elevación de talones. Sin peso nuevo.'],
+          ['Después', '5-10 min muy suave. Nada de calidad en las 48 h siguientes ni el día antes de la larga.'],
+          ['Se corta si', 'duele la rodilla o el tobillo, o aparece el dolor que irradia: se suspende la sesión, no se aguanta.']
+        ];
+      } else if (tipo === 'facil') {
+        pasos = [
+          ['Objetivo', 'sumar kilómetros sin quitarte las piernas para la larga ni para la calidad.'],
+          ['Duración', '45-60 min; si el día viene cargado, 30 min ya cuentan.'],
+          ['Pulso', 'Z2: ' + z2[0] + '-' + z2[1] + ', techo ' + z2[1] + '. Si se pasa por calor o por la cuesta, se baja el ritmo antes que la duración.'],
+          ['Ritmo', 'da igual. Tiene que salir la conversación en frases completas; si no sale, vas fuerte.'],
+          ['Cuándo', 'el día que quede libre, nunca el día antes de la larga ni pegado a la calidad.'],
+          ['Cuenta como', 'de los ' + f.km + ' km de la semana, ' + f.larga + ' son la larga: el resto' +
+            (quedan > 0 ? ' (unos ' + quedan + ' km)' : '') + ' se reparte entre este fácil y la calidad.'],
+          ['Se corta si', 'molestia que va a más: se cambia por caminata y se anota la molestia.']
+        ];
+      } else {
+        pasos = [
+          ['Objetivo', 'acostumbrar músculo, tendón y cabeza al tiempo encima, no a la velocidad.'],
+          ['Distancia', f.larga + ' km, en una sola salida.'],
+          ['Pulso', 'Z2: ' + z2[0] + '-' + z2[1] + ', techo ' + z2[1] + '. En subida manda el pulso: si se pasa del techo, se camina.'],
+          ['Ritmo', 'sin objetivo. Se corre a conversación y el último km puede salir algo más vivo, nunca al revés.'],
+          ['Antes / después', 'el día anterior, descanso o fácil corto; al día siguiente, nada de calidad.'],
+          ['Agua y comida', 'si pasa de 75 min, agua cada 20 min; la comida se prueba en las largas largas, no el día de la carrera.'],
+          ['Se corta si', 'dolor que irradia, pinchazo en la rodilla o el tobillo que ya falló: se camina de vuelta y se anota dónde y en qué minuto.']
+        ];
+      }
+
+      var avisos = [];
+      if (hecha) {
+        var kmH = Number(hecha.km) || 0, minH = Number(hecha.min) || 0;
+        avisos.push('Ya registrada el ' + hecha.fecha + ': ' + (kmH ? kmH + ' km' : '') +
+          (minH ? (kmH ? ' en ' : '') + minH + ' min' : '') +
+          (hecha.fc_media ? ' · FC media ' + hecha.fc_media : '') + '.');
+        if (tipo === 'larga' && kmH && Math.abs(kmH - f.larga) >= 0.5) {
+          avisos.push(kmH > f.larga ? 'Salieron ' + (Math.round((kmH - f.larga) * 10) / 10) +
+            ' km de más: la siguiente no sube.' : 'Faltaron ' + (Math.round((f.larga - kmH) * 10) / 10) +
+            ' km de la larga: se repite la distancia antes de subir.');
+        }
+        if (hecha.molestia) avisos.push('Anotaste molestia: «' + hecha.molestia + '» — si repite, se baja la semana.');
+      } else {
+        avisos.push('Sin registrar en la semana ' + n + '. Al guardarla se compara sola con lo pedido.');
+      }
+
+      return {
+        ok: true, semana: n, tipo: tipo, fecha: fecha, fila: f, hecha: hecha,
+        titulo: tipo === 'calidad' ? 'Calidad' : tipo === 'facil' ? 'Fácil' : 'Larga · ' + f.larga + ' km',
+        resumen: tipo === 'calidad' ? String(f.calidad) + ' · con fuerza 15-20 min al final'
+          : tipo === 'facil' ? '45-60 min en Z2 · suma volumen'
+          : f.larga + ' km en Z2 · cuestas caminando',
+        pasos: pasos.map(function (p) { return { k: p[0], v: p[1] }; }),
+        avisos: avisos
+      };
+    },
+
     contrato: function () {
       return {
         api: VERSION,
         almacen: CLAVE,
-        funciones: ['atletas', 'leer', 'zonas', 'sesionDeHoy', 'balance', 'registrar', 'borrar',
+        funciones: ['atletas', 'leer', 'zonas', 'sesionDeHoy', 'ficha', 'balance', 'registrar', 'borrar',
                     'ajustarSemana', 'perfil', 'reiniciar', 'exportar', 'importar',
                     'webhook', 'docs', 'aplicarHash'],
         sesion: ['fecha AAAA-MM-DD', 'tipo: calidad|facil|larga|fuerza|carrera|otro', 'km', 'min',
@@ -495,6 +576,7 @@
         '  Agente.leer("jonah")              -> { ok, atleta, semanas[21], registro[], ajustes[] }',
         '  Agente.zonas("jonah")             -> { ok, fcmax, zonas:{Z1:[lo,hi],...} }',
         '  Agente.sesionDeHoy("jonah")       -> { ok, semana, fila, pendientes[], sugerida }',
+        '  Agente.ficha("jonah","larga")     -> { ok, titulo, resumen, pasos:[{k,v}], hecha, avisos[] }',
         '  Agente.balance("jonah")           -> { ok, kmHechos, pct, ritmo, deltaSeg, pendientes[], avisos[] }',
         '',
         'ESCRITURA',
