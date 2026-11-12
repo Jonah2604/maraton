@@ -41,6 +41,12 @@
   .marca{display:flex;align-items:center;gap:9px;font-weight:800;font-size:15px;letter-spacing:1.6px;text-transform:uppercase}
   .marca img{width:28px;height:28px;border-radius:50%;box-shadow:0 0 0 1px rgba(224,213,195,.45)}
   .marca span{color:var(--acento2);letter-spacing:1px;font-size:12px;font-weight:700}
+  .marca .gear{
+    margin-left:auto;width:34px;height:34px;flex:0 0 auto;border-radius:11px;cursor:pointer;
+    background:rgba(224,213,195,.08);border:1px solid rgba(224,213,195,.22);color:var(--hueso);
+    font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;
+  }
+  .marca .gear:active{background:rgba(176,67,62,.35)}
   .atletas{display:flex;gap:8px;margin-top:9px}
   .atletas button{
     flex:1; padding:9px 10px; border-radius:11px; border:1px solid var(--linea);
@@ -168,7 +174,9 @@
 <body>
 
 <header>
-  <div class="marca"><img src="logo-cabeza.png" alt="">MARATÓN <span id="mCarrera">· 21 semanas</span></div>
+  <div class="marca"><img src="logo-cabeza.png" alt="">MARATÓN <span id="mCarrera">· 21 semanas</span>
+    <button class="gear" id="bAjustes" aria-label="Ajustes" title="Ajustes">⚙</button>
+  </div>
   <div class="atletas" id="atletas"></div>
 </header>
 
@@ -243,19 +251,14 @@
   <section id="vAgente" class="oculto">
     <div class="card">
       <h2>Este teléfono es de</h2>
-      <p class="peq">Si le pasas la app a otra persona, aquí cambia el nombre y su FC máxima y las
-        cinco zonas se recalculan solas.</p>
-      <div class="dos">
-        <div><label>Nombre</label><input id="pNombre" maxlength="40"></div>
-        <div><label>Edad</label><input id="pEdad" type="number" inputmode="numeric" min="10" max="100"></div>
+      <p class="peq">Nombre, pulso y carrera de cada lugar. Si le pasas la app a otra persona, se cambia
+        aquí y las cinco zonas se recalculan solas.</p>
+      <div class="chips" style="margin-top:10px">
+        <span class="chip">Atleta <b id="aQuien">–</b></span>
+        <span class="chip">FC máx <b id="aFcmax">–</b></span>
+        <span class="chip" id="aCarrera">–</span>
       </div>
-      <div class="dos">
-        <div><label>FC máxima</label><input id="pFcmax" type="number" inputmode="numeric" min="120" max="220"></div>
-        <div><label>FC en reposo</label><input id="pReposo" type="number" inputmode="numeric" min="30" max="110" placeholder="opcional"></div>
-      </div>
-      <button class="bt pri" style="width:100%;margin-top:10px" id="bPerfil">Guardar perfil</button>
-      <button class="bt" style="width:100%;margin-top:8px" id="bReiniciar">Dejar este lugar en blanco</button>
-      <div class="aviso" id="pAviso"></div>
+      <button class="bt pri" style="width:100%;margin-top:12px" id="bAjustes2">Cambiar nombre o pulso</button>
     </div>
 
     <div class="card">
@@ -350,6 +353,34 @@
   </div>
 </div>
 
+<div class="hoja" id="ajustes">
+  <div class="caja">
+    <div class="fila"><b style="font-size:16px">Ajustes</b>
+      <button class="bt mini" id="ajCerrar">Cerrar</button></div>
+    <p class="peq" style="margin:8px 0 0">Cada lugar guarda su nombre, su pulso y su carrera. Si la app
+      la va a usar otra persona, cambia estos datos y vacía el lugar para que no herede el registro.</p>
+    <div class="chips" id="ajSlots" style="margin-top:10px"></div>
+    <div class="dos">
+      <div><label>Nombre</label><input id="ajNombre" maxlength="40" placeholder="Atleta"></div>
+      <div><label>Edad</label><input id="ajEdad" type="number" inputmode="numeric" min="10" max="100"></div>
+    </div>
+    <div class="dos">
+      <div><label>FC máxima</label><input id="ajFcmax" type="number" inputmode="numeric" min="120" max="220"></div>
+      <div><label>FC en reposo</label><input id="ajReposo" type="number" inputmode="numeric" min="30" max="110" placeholder="opcional"></div>
+    </div>
+    <div class="dos">
+      <div><label>Día de la carrera</label><input id="ajCarrera" type="date"></div>
+      <div><label>Meta</label><input id="ajMeta" maxlength="40" placeholder="A 4:45 / B 5:00"></div>
+    </div>
+    <label style="display:flex;align-items:center;gap:9px;margin-top:14px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--texto);font-weight:600">
+      <input type="checkbox" id="ajDos" style="width:18px;height:18px;flex:0 0 auto"> Mostrar los dos atletas en la barra
+    </label>
+    <button class="bt pri" style="width:100%;margin-top:12px" id="ajGuardar">Guardar</button>
+    <button class="bt" style="width:100%;margin-top:8px" id="ajBlanco">Vaciar este lugar (borra su registro)</button>
+    <div class="aviso" id="ajAviso"></div>
+  </div>
+</div>
+
 <script src="agente.js"></script>
 <script>
 (function () {
@@ -363,10 +394,22 @@
   function $(s) { return document.querySelector(s); }
   function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, function (c) {
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function fechaCorta(iso) {
+    var p = String(iso || '').split('-');
+    return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : '';
+  }
 
   // ---------------------------------------------------------------- atletas
+  // La barra muestra uno o dos lugares segun el ajuste; el nombre sale del perfil guardado.
+  var dosAtletas = true;
+
   function pintarAtletas() {
     var lista = A.atletas().atletas;
+    if (!dosAtletas) {
+      var solo = lista.filter(function (a) { return a.id === atleta; });
+      lista = solo.length ? solo : lista.slice(0, 1);
+      if (lista.length) atleta = lista[0].id;
+    }
     $('#atletas').innerHTML = lista.map(function (a) {
       return '<button data-at="' + a.id + '" class="' + (a.id === atleta ? 'on' : '') + '">' +
              esc(a.nombre) + ' · FC ' + a.fcmax + '</button>';
@@ -377,13 +420,14 @@
   }
 
   function guardarUI() {
-    try { localStorage.setItem(UI, JSON.stringify({ atleta: atleta, vista: vista })); } catch (e) {}
+    try { localStorage.setItem(UI, JSON.stringify({ atleta: atleta, vista: vista, dos: dosAtletas })); } catch (e) {}
   }
   function cargarUI() {
     try {
       var o = JSON.parse(localStorage.getItem(UI) || '{}');
       if (o.atleta === 'jonah' || o.atleta === 'yuli') atleta = o.atleta;
       if (o.vista && ['Hoy','Plan','Reg','Agente'].indexOf(o.vista) >= 0) vista = o.vista;
+      if (o.dos === false) dosAtletas = false;
     } catch (e) {}
   }
 
@@ -422,7 +466,7 @@
     var d = A.leer(atleta), h = A.sesionDeHoy(atleta, diaActivo()), f = h.fila;
     $('#hNombre').textContent = d.atleta.nombre;
     $('#hFcmax').textContent = d.atleta.fcmax;
-    $('#mCarrera').textContent = '· ' + d.atleta.carrera.split('-').reverse().join('/');
+    $('#mCarrera').textContent = d.atleta.carrera ? ('· ' + fechaCorta(d.atleta.carrera)) : '· sin carrera';
     $('#hNum').textContent = h.semana;
     $('#hFechas').textContent = f.fechas;
     if ($('#hDiaSel')) $('#hDiaSel').textContent = diaSel ? (' · viendo ' + diaSel.split('-').reverse().join('/')) : '';
@@ -500,8 +544,10 @@
     var carrera = d.semanas.filter(function (s) { return s.n === 21; })
                            .reduce(function (a, s) { return a + (s.km || 0); }, 0);
     $('#pTotal').textContent = 'Entrenamiento ' + Math.round(entreno) + ' km + carrera ' +
-      (carrera % 1 ? carrera.toFixed(1) : Math.round(carrera)) + ' km = ' + suma.toFixed(1).replace('.0','') +
-      ' km · meta ' + d.atleta.meta + ' · carrera ' + d.atleta.carrera + ' · el pulso manda, el ritmo es referencia.';
+      (carrera % 1 ? carrera.toFixed(1) : Math.round(carrera)) + ' km = ' + suma.toFixed(1).replace('.0','') + ' km' +
+      (d.atleta.meta ? ' · meta ' + d.atleta.meta : '') +
+      (d.atleta.carrera ? ' · carrera ' + fechaCorta(d.atleta.carrera) : '') +
+      ' · el pulso manda, el ritmo es referencia.';
   }
 
   // -------------------------------------------------------------- registro
@@ -578,20 +624,54 @@
     $('#aDocs').textContent = A.docs();
     var e = JSON.parse(localStorage.getItem('maraton.v1') || '{}');
     $('#aWebhook').value = e.webhook || '';
-    $('#pNombre').value = d.atleta.nombre;
-    $('#pEdad').value = d.atleta.edad;
-    $('#pFcmax').value = d.atleta.fcmax;
-    $('#pReposo').value = d.atleta.fc_reposo || '';
+    $('#aQuien').textContent = d.atleta.nombre;
+    $('#aFcmax').textContent = d.atleta.fcmax;
+    $('#aCarrera').textContent = d.atleta.carrera ? ('Carrera ' + fechaCorta(d.atleta.carrera)) : 'sin carrera';
   }
 
-  function perfilGuardar() {
-    var r = A.perfil(atleta, {
-      nombre: $('#pNombre').value, edad: $('#pEdad').value,
-      fcmax: $('#pFcmax').value, fc_reposo: $('#pReposo').value
+  // ---------------------------------------------------------------- ajustes
+  // Un solo formulario para los dos lugares: el que este elegido en la barra.
+  function pintarAjustes() {
+    var lista = A.atletas().atletas;
+    $('#ajSlots').innerHTML = lista.map(function (a) {
+      return '<button class="chip" data-aj="' + a.id + '" style="cursor:pointer;font:inherit;font-size:12px;' +
+        (a.id === atleta ? 'background:rgba(176,67,62,.4);border-color:var(--acento2);color:#fff' : '') + '">' +
+        esc(a.nombre) + ' · FC ' + a.fcmax + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(document.querySelectorAll('#ajSlots [data-aj]'), function (b) {
+      b.onclick = function () {
+        atleta = b.dataset.aj; guardarUI(); pintarAtletas(); pintarAjustes();
+      };
     });
-    $('#pAviso').textContent = r.ok ? ('Guardado · zonas con FC ' + r.fcmax) : r.error;
-    $('#pAviso').className = 'aviso ' + (r.ok ? 'ok' : 'err');
-    if (r.ok) pintarTodo();
+    var d = A.leer(atleta);
+    $('#ajNombre').value = d.atleta.nombre;
+    $('#ajEdad').value = d.atleta.edad == null ? '' : d.atleta.edad;
+    $('#ajFcmax').value = d.atleta.fcmax;
+    $('#ajReposo').value = d.atleta.fc_reposo || '';
+    $('#ajCarrera').value = d.atleta.carrera || '';
+    $('#ajMeta').value = d.atleta.meta || '';
+    $('#ajDos').checked = dosAtletas;
+    $('#ajAviso').textContent = '';
+    $('#ajAviso').className = 'aviso';
+  }
+
+  function ajustesGuardar() {
+    var r = A.perfil(atleta, {
+      nombre: $('#ajNombre').value, edad: $('#ajEdad').value,
+      fcmax: $('#ajFcmax').value, fc_reposo: $('#ajReposo').value,
+      carrera: $('#ajCarrera').value, meta: $('#ajMeta').value
+    });
+    if (!r.ok) {
+      $('#ajAviso').textContent = r.error;
+      $('#ajAviso').className = 'aviso err';
+      return;
+    }
+    dosAtletas = $('#ajDos').checked;
+    guardarUI();
+    pintarTodo();
+    pintarAjustes();
+    $('#ajAviso').textContent = 'Guardado · ' + r.perfil.nombre + ' · zonas con FC ' + r.fcmax;
+    $('#ajAviso').className = 'aviso ok';
   }
 
   function pintarTodo() {
@@ -964,14 +1044,32 @@
     this.value = '';
   };
 
-  $('#bPerfil').onclick = perfilGuardar;
+  function abrirAjustes() { pintarAjustes(); $('#ajustes').classList.add('abierta'); }
+  $('#bAjustes').onclick = abrirAjustes;
+  $('#bAjustes2').onclick = abrirAjustes;
 
-  $('#bReiniciar').onclick = function () {
+  $('#ajCerrar').onclick = function () {
+    $('#ajustes').classList.remove('abierta');
+    pintarTodo();
+  };
+  $('#ajustes').onclick = function (ev) {
+    if (ev.target === this) { this.classList.remove('abierta'); pintarTodo(); }
+  };
+  $('#ajGuardar').onclick = ajustesGuardar;
+
+  $('#ajBlanco').onclick = function () {
     if (!confirm('¿Borrar el registro, los ajustes y el perfil de este lugar? El plan queda intacto.')) return;
     var r = A.reiniciar(atleta);
-    $('#pAviso').textContent = r.ok ? 'Lugar en blanco, listo para otra persona' : r.error;
-    $('#pAviso').className = 'aviso ' + (r.ok ? 'ok' : 'err');
+    if (!r.ok) {
+      $('#ajAviso').textContent = r.error;
+      $('#ajAviso').className = 'aviso err';
+      return;
+    }
+    A.perfil(atleta, { nombre: 'Atleta', carrera: '', meta: '' });
     pintarTodo();
+    pintarAjustes();
+    $('#ajAviso').textContent = 'Lugar en blanco. Escribe el nombre y la FC de quien lo va a usar.';
+    $('#ajAviso').className = 'aviso ok';
   };
 
   $('#bWebhook').onclick = function () {

@@ -137,6 +137,10 @@
     ['nombre', 'edad', 'fcmax', 'fc_reposo', 'meta', 'carrera'].forEach(function (c) {
       if (p[c] !== undefined && p[c] !== null && p[c] !== '') o[c] = p[c];
     });
+    // Vaciado a proposito: carrera y meta se pueden dejar en blanco y no deben volver al plan base.
+    ['carrera', 'meta'].forEach(function (c) {
+      if (p[c] === null || p[c] === '') o[c] = null;
+    });
     o.zonas = zonasDe(id);
     return o;
   }
