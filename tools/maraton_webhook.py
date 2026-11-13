@@ -92,7 +92,12 @@ class Manejador(BaseHTTPRequestHandler):
         with LOG.open("a", encoding="utf-8") as f:
             f.write(json.dumps({"recibido": time.strftime("%Y-%m-%dT%H:%M:%S"),
                                 "atleta": atleta, "sesiones": len(sesiones)}) + "\n")
+        if atleta in VIGILAR:
             (CACHE / "ultimo.json").write_text(json.dumps(datos, ensure_ascii=False), encoding="utf-8")
+            try:
+                print("respaldo", atleta, guardar_respaldo(atleta, datos), "sesiones", flush=True)
+            except Exception as fallo:
+                print("respaldo fallo:", fallo, flush=True)
 
         if atleta in VIGILAR:
             partes_txt = []
@@ -107,6 +112,35 @@ class Manejador(BaseHTTPRequestHandler):
                      + " Revisa con tools/analizar.py y da feedback.")
             avisar_al_agente(texto[:900])
         return self._responder(200, {"ok": True, "atleta": atleta})
+
+
+def guardar_respaldo(atleta, datos):
+    """Copia por atleta: si el telefono pierde la memoria de la app, aqui queda el historial."""
+    archivo = CACHE / f"respaldo_{atleta}.json"
+    previo = {}
+    if archivo.exists():
+        try:
+            previo = json.loads(archivo.read_text(encoding="utf-8"))
+        except Exception:
+            previo = {}
+    sesiones = list(previo.get("sesiones") or [])
+    vistas = {(str(s.get("fecha")), str(s.get("tipo"))): i for i, s in enumerate(sesiones)}
+    for s in datos.get("sesiones") or []:
+        if not isinstance(s, dict):
+            continue
+        clave = (str(s.get("fecha")), str(s.get("tipo")))
+        if clave in vistas:
+            sesiones[vistas[clave]] = s
+        else:
+            vistas[clave] = len(sesiones)
+            sesiones.append(s)
+    sesiones.sort(key=lambda s: str(s.get("fecha") or ""))
+    salida = {"atleta": atleta,
+              "actualizado": time.strftime("%Y-%m-%dT%H:%M:%S"),
+              "perfil": datos.get("perfil") or previo.get("perfil"),
+              "sesiones": sesiones}
+    archivo.write_text(json.dumps(salida, ensure_ascii=False, indent=1), encoding="utf-8")
+    return len(sesiones)
 
 
 def main():
