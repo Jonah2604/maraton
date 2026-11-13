@@ -530,12 +530,131 @@ function rellenar(plan, inicio) {
     }
     return INICIO;
   }
-  function semanaDe(fecha) {
+  function semanaDe(fecha, id) {
     if (!esFecha(fecha)) return null;
+    var ini = id ? inicioDe(id) : INICIO;
     var p = fecha.split('-').map(Number);
-    var dias = Math.floor((Date.UTC(p[0], p[1] - 1, p[2]) - INICIO) / 86400000);
+    var dias = Math.floor((Date.UTC(p[0], p[1] - 1, p[2]) - ini) / 86400000);
     var n = Math.floor(dias / 7) + 1;
-    return n < 1 ? 1 : (n > 21 ? 21 : n);
+    var tope = 21;
+    if (id) { var a = atleta(id); if (a && a.semanas && a.semanas.length) tope = a.semanas.length; }
+    if (n < 1) return 1;
+    return n > tope ? tope : n;
+  }
+
+  var MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+  // Texto de la semana con el estilo que ya traia el plan: "9 al 15 Nov" o "9 - 15 nov".
+  function rangoSemana(lunesISO, estilo) {
+    var a = desFecha(lunesISO), b = new Date(a.getTime() + 6 * 86400000);
+    var d1 = a.getUTCDate(), d2 = b.getUTCDate();
+    var m1 = MESES[a.getUTCMonth()], m2 = MESES[b.getUTCMonth()];
+    if (estilo === 'al') return d1 + ' al ' + d2 + ' ' + m2.charAt(0).toUpperCase() + m2.slice(1);
+    return d1 + (m1 !== m2 ? ' ' + m1 : '') + ' - ' + d2 + ' ' + m2;
+  }
+
+  /* Mueve el plan al calendario de la carrera nueva SIN tocar lo que ya se corrio.
+     Si sobran semanas hasta la carrera, se mete mantenimiento despues de cada descarga
+     (mismo volumen que la semana previa, sin subir). Si faltan, se quitan semanas de
+     construccion, nunca descargas ni taper. Las fechas de las semanas se reescriben. */
+  function reajustarCarrera(id, carrera) {
+    var a = atleta(id);
+    if (!a) return { ok: false, error: 'atleta desconocido: ' + id };
+    if (!esFecha(carrera)) return { ok: false, error: 'fecha de carrera invalida' };
+    var lunes1 = isoFecha(new Date(inicioDe(id)));
+    var dias = Math.floor((desFecha(carrera) - desFecha(lunes1)) / 86400000);
+    if (dias < 0) return { ok: false, error: 'la carrera quedaria antes del arranque (' + lunes1 + ')' };
+    var disp = Math.floor(dias / 7) + 1;
+    var plantilla = a.semanas.map(function (s) {
+      var o = {}; for (var k in s) if (s.hasOwnProperty(k)) o[k] = s[k]; return o;
+    });
+    var n = plantilla.length, hoy = semanaDe(hoyISO(), id) || 1, i, ss = plantilla.slice(), extra = 0, quitadas = 0;
+
+    if (disp > n) {
+      extra = disp - n;
+      var puntos = [];
+      plantilla.forEach(function (s, j) {
+        if (j < 2 || j >= n - 3) return;                       // solo dentro de la construccion
+        var k = Number(s.km) || 0, a1 = Number(plantilla[j - 1] && plantilla[j - 1].km) || 0;
+        // descarga = la semana baja mas de 12 % contra la anterior (no basta la palabra en la nota)
+        if (a1 && k && k < a1 * 0.88) puntos.push(j);
+      });
+      if (!puntos.length) puntos = [Math.max(1, Math.floor(n / 3))];
+      var cola = {}, cuotaBase = Math.floor(extra / puntos.length), resto = extra % puntos.length;
+      puntos.forEach(function (j, k) { cola[j] = cuotaBase + (k < resto ? 1 : 0); });
+      ss = [];
+      plantilla.forEach(function (s, j) {
+        ss.push(s);
+        var q = cola[j] || 0, prev = plantilla[j - 1] || s;
+        for (var t = 0; t < q; t++) {
+          ss.push({ n: 0, km: prev.km, larga: prev.larga, calidad: 'sin calidad',
+                    nota: 'Mantenimiento: repite el volumen de la semana anterior sin subir; nada nuevo.' });
+        }
+      });
+    } else if (disp < n) {
+      quitadas = n - disp;
+      // candidatas: construccion sin descargas, despues de la semana en curso y antes del taper
+      var cand = [];
+      ss.forEach(function (s, j) {
+        if (j < hoy || j >= n - 3) return;          // no se toca lo corrido, ni el taper, ni la carrera
+        var k = Number(s.km) || 0, a1 = Number(ss[j - 1] && ss[j - 1].km) || 0;
+        if (a1 && k && k < a1 * 0.88) return;       // las descargas se respetan
+        cand.push(j);
+      });
+      if (cand.length < quitadas) {
+        return { ok: false, error: 'no caben: con la carrera el ' + carrera + ' sobran ' + (n - disp) +
+                 ' semanas y solo hay ' + cand.length + ' de construccion que se puedan quitar sin romper descargas ni taper' };
+      }
+      var fuera = cand.slice(cand.length - quitadas);
+      ss = plantilla.filter(function (s, j) { return fuera.indexOf(j) < 0; });
+    }
+
+    var estilo = / al /i.test(String(plantilla[0].fechas || '')) ? 'al' : 'dash';
+    var nuevas = ss.map(function (s, j) {
+      var o = {}; for (var k in s) if (s.hasOwnProperty(k)) o[k] = s[k];
+      o.n = j + 1;
+      o.fechas = rangoSemana(isoFecha(new Date(desFecha(lunes1).getTime() + j * 7 * 86400000)), estilo);
+      return o;
+    });
+    // la carrera queda en la ultima semana, con su nota y su fecha
+    var ult = nuevas[nuevas.length - 1];
+    if (/carrera/i.test(String(ult.nota || ''))) ult.nota = 'CARRERA ' + carrera;
+
+    var e = cargar();
+    e.planes[id] = e.planes[id] || {};
+    e.planes[id].inicio = lunes1;
+    e.planes[id].semanas = nuevas;
+    e.planes[id].reajuste = { cuando: new Date().toISOString(), carrera: carrera,
+                              antes: a.carrera || null, extra: extra, quitadas: quitadas };
+    if (!guardar(e)) return { ok: false, error: 'no se pudo guardar' };
+    var riesgo = null;
+    if (nuevas.length < 14) {
+      riesgo = 'Con ' + nuevas.length + ' semanas no alcanza para preparar un maraton completo: ' +
+               'o mueves la carrera mas lejos, o la corres con meta de terminarla caminando.';
+    }
+    return { ok: true, carrera: carrera, inicio: lunes1, semanas: nuevas.length,
+             extra: extra, quitadas: quitadas, semana_hoy: hoy, riesgo: riesgo,
+             primera: nuevas[0].fechas, ultima: nuevas[nuevas.length - 1].fechas };
+  }
+
+  // La fecha guardada en el perfil y el calendario del plan tienen que cuadrar. Si el usuario
+  // cambio la carrera en otro telefono, o entro antes de que existiera el reajuste, aqui se
+  // pone al dia una sola vez. Sin esto la app sigue contando la semana 1 para siempre.
+  var _reconciliando = {};
+  function reconciliaCarrera(id) {
+    if (_reconciliando[id]) return null;
+    var e = cargar(), p = e.perfiles && e.perfiles[id];
+    if (!p || !p.carrera || !esFecha(p.carrera)) return null;
+    var a = atleta(id);
+    if (!a || !a.semanas || !a.semanas.length) return null;
+    var lunes1 = desFecha(isoFecha(new Date(inicioDe(id))));
+    var desde = lunes1.getTime() + (a.semanas.length - 1) * 7 * 86400000;
+    var hasta = desde + 6 * 86400000;
+    var t = desFecha(p.carrera).getTime();
+    if (t >= desde && t <= hasta) return null;      // ya cae en la ultima semana: nada que hacer
+    _reconciliando[id] = 1;
+    try { return reajustarCarrera(id, p.carrera); }
+    finally { delete _reconciliando[id]; }
   }
 
   // Perfil efectivo: lo del vault, con encima lo que la persona haya ajustado en su telefono.
@@ -546,6 +665,11 @@ function rellenar(plan, inicio) {
     if (!b) return null;
     var o = {}, k;
     for (k in b) if (b.hasOwnProperty(k)) o[k] = b[k];
+    // El plan puede haberse reajustado a otra fecha de carrera: esas semanas mandan
+    // sobre la plantilla del vault, porque llevan el calendario y los n ya reordenados.
+    var pl = e.planes[id];
+    if (PLANES_BASE.atletas[id] && pl && pl.semanas && pl.semanas.length) o.semanas = pl.semanas;
+    if (pl && pl.inicio) o.inicio = pl.inicio;
     if (p) {
       ['nombre', 'edad', 'fcmax', 'fc_reposo', 'meta', 'carrera', 'notas'].forEach(function (c) {
         if (p[c] !== undefined && p[c] !== null && p[c] !== '') o[c] = p[c];
@@ -723,6 +847,7 @@ function rellenar(plan, inicio) {
     // Estado completo de un atleta: lo que un agente necesita para decidir.
     leer: function (id) {
       if (!idValido(id)) return { ok: false, error: 'atleta desconocido: ' + id };
+      reconciliaCarrera(id);
       var a = atleta(id), e = cargar();
       return {
         ok: true,
@@ -819,8 +944,12 @@ function rellenar(plan, inicio) {
       e.perfiles[id] = p;
       if (!guardar(e)) return { ok: false, error: 'no se pudo guardar' };
       avisar(id);
+      // Cambiar la fecha de la carrera mueve el calendario del plan: si no, las semanas
+      // se quedan ancladas a la fecha vieja y la app sigue contando la semana por el 9 nov.
+      var reajuste = null;
+      if (campos.carrera !== undefined && p.carrera) reajuste = reajustarCarrera(id, p.carrera);
       var a = atleta(id);
-      return { ok: true, perfil: p, zonas: a.zonas, fcmax: a.fcmax };
+      return { ok: true, perfil: p, zonas: a.zonas, fcmax: a.fcmax, reajuste: reajuste };
     },
 
     // Deja el lugar en blanco para entregarlo a otra persona: borra registro, ajustes y perfil.
@@ -837,9 +966,9 @@ function rellenar(plan, inicio) {
       if (!idValido(id)) return { ok: false, error: 'atleta desconocido: ' + id };
       fecha = fecha || hoyISO();
       if (!esFecha(fecha)) return { ok: false, error: 'fecha invalida: ' + fecha };
-      var n = semanaDe(fecha), f = filaSemana(id, n);
+      var n = semanaDe(fecha, id), f = filaSemana(id, n);
       var e = cargar();
-      var yaEnSemana = e.registro[id].filter(function (r) { return semanaDe(r.fecha) === n; });
+      var yaEnSemana = e.registro[id].filter(function (r) { return semanaDe(r.fecha, id) === n; });
       var hechas = {};
       yaEnSemana.forEach(function (r) { hechas[r.tipo] = true; });
       var pendientes = ['calidad', 'facil', 'larga'].filter(function (t) { return !hechas[t]; });
@@ -857,7 +986,7 @@ function rellenar(plan, inicio) {
       if (!idValido(id)) return { ok: false, error: 'atleta desconocido: ' + id };
       fecha = fecha || hoyISO();
       if (!esFecha(fecha)) return { ok: false, error: 'fecha invalida: ' + fecha };
-      var a = atleta(id), e = cargar(), n = semanaDe(fecha), f = filaSemana(id, n);
+      var a = atleta(id), e = cargar(), n = semanaDe(fecha, id), f = filaSemana(id, n);
       var reg = e.registro[id];
       function norm(r) {
         var k = Number(r.km) || 0, m = Number(r.min) || 0;
@@ -866,14 +995,26 @@ function rellenar(plan, inicio) {
                  fc_max: r.fc_max == null ? null : Number(r.fc_max), zona: r.zona || '',
                  temp: r.temp == null || r.temp === '' ? null : Number(r.temp) };
       }
-      var esta = reg.filter(function (r) { return semanaDe(r.fecha) === n; }).map(norm);
-      var prev = reg.filter(function (r) { return semanaDe(r.fecha) === n - 1; }).map(norm);
+      var esta = reg.filter(function (r) { return semanaDe(r.fecha, id) === n; }).map(norm);
+      var prev = reg.filter(function (r) { return semanaDe(r.fecha, id) === n - 1; }).map(norm);
       function suma(xs, k) { return xs.reduce(function (s, x) { return s + (Number(x[k]) || 0); }, 0); }
       function ritmoMed(xs) {
         var k = suma(xs, 'km'), m = suma(xs, 'min');
         return k > 0 && m > 0 ? m / k : null;
       }
-      var hechas = {}; esta.forEach(function (r) { hechas[r.tipo] = r; });
+      function fmtRitmo(m) {
+        if (!m) return '—';
+        var sg = Math.round(m * 60);
+        return Math.floor(sg / 60) + ':' + (sg % 60 < 10 ? '0' : '') + (sg % 60);
+      }
+      // Un tipo cuenta solo si la sesion parece de ese tipo: 4 km en 44 min con FC 90 es
+      // una caminata, y si se marca como "calidad" la app diria que la semana esta hecha.
+      var LIM = { calidad: 8.5, facil: 9.5, larga: 10.5 };   // min/km maximos creibles
+      var dudosas = esta.filter(function (r) {
+        return LIM[r.tipo] && r.ritmo && r.ritmo > LIM[r.tipo];
+      });
+      var hechas = {};
+      esta.forEach(function (r) { if (dudosas.indexOf(r) < 0) hechas[r.tipo] = r; });
       var pendientes = ['calidad', 'facil', 'larga'].filter(function (t) { return !hechas[t]; });
       var techo = a.zonas && a.zonas.Z2 ? a.zonas.Z2[1] : null;
       var kmHechos = suma(esta, 'km'), pct = f && f.km ? Math.round(kmHechos / f.km * 100) : null;
@@ -883,6 +1024,11 @@ function rellenar(plan, inicio) {
         else if (pct != null && esta.length >= 2 && pct < 50 && pendientes.length === 0) avisos.push('quedaste corto: ' + kmHechos.toFixed(1) + ' de ' + f.km + ' km, la siguiente no se sube');
         if (pendientes.length) avisos.push('faltan: ' + pendientes.join(', ') + ' (si el dia ya paso, se camina o se mueve, no se pega al siguiente)');
       }
+      dudosas.forEach(function (r) {
+        avisos.push('la del ' + r.fecha + ' marcada como ' + r.tipo + ' fue caminata (' +
+                    fmtRitmo(r.ritmo) + '/km, FC ' + (r.fc_media == null ? '—' : r.fc_media) +
+                    '): no cuenta como ' + r.tipo + ' de la semana');
+      });
       var altas = esta.filter(function (r) { return techo && r.fc_max && r.fc_max > techo; });
       if (altas.length) avisos.push(altas.length + ' sesion(es) pasaron el techo de Z2 (' + techo + '): esas son las que piden mas recuperacion');
       var rEsta = ritmoMed(esta), rPrev = ritmoMed(prev);
@@ -891,7 +1037,9 @@ function rellenar(plan, inicio) {
       return { ok: true, semana: n, fila: f, esta: esta, previa: prev, kmHechos: kmHechos, kmPrevios: suma(prev, 'km'),
         horasHechas: Math.round(suma(esta, 'min') / 6) / 10, horasPrevias: Math.round(suma(prev, 'min') / 6) / 10,
         pct: pct, ritmo: rEsta, ritmoPrev: rPrev, deltaSeg: delta, pendientes: pendientes, avisos: avisos,
-        proxima: filaSemana(id, Math.min(21, n + 1)) };
+        total: a.semanas.length,
+        dudosas: dudosas.map(function (r) { return { fecha: r.fecha, tipo: r.tipo, ritmo: r.ritmo }; }),
+        proxima: filaSemana(id, Math.min(a.semanas.length, n + 1)) };
     },
 
     // Guarda una sesion hecha. Valida todo antes de escribir: si algo no cuadra, no entra nada.
@@ -929,7 +1077,7 @@ function rellenar(plan, inicio) {
         zona: s.zona || zonaDe(id, fcm),
         esf: esf, temp: temp, molestia: String(s.molestia || '').slice(0, 300),
         nota: String(s.nota || '').slice(0, 500),
-        semana: semanaDe(fecha),
+        semana: semanaDe(fecha, id),
         creado: new Date().toISOString()
       };
       e.registro[id].push(fila);
@@ -959,7 +1107,7 @@ function rellenar(plan, inicio) {
       if (!e.notas[id]) e.notas[id] = [];
       var inf = interpretarNota(v.texto);
       var reg = {
-        fecha: hoyISO(), semana: Number(semana) || semanaDe(hoyISO()),
+        fecha: hoyISO(), semana: Number(semana) || semanaDe(hoyISO(), id),
         texto: v.texto, tipo: (tipo && TIPOS_NOTA.indexOf(tipo) >= 0) ? tipo : 'otro',
         dias_bloqueados: inf.dias_bloqueados, quiere_mas_dias: inf.quiere_mas_dias,
         motivo: inf.motivo, creado: new Date().toISOString()
@@ -1034,7 +1182,9 @@ function rellenar(plan, inicio) {
         var a = atleta(id);
         return { ok: true, json: JSON.stringify({
           api: VERSION, exportado: new Date().toISOString(),
-          atleta: { id: id, nombre: a.nombre, edad: a.edad, fcmax: a.fcmax, fc_reposo: a.fc_reposo, zonas: a.zonas },
+          atleta: { id: id, nombre: a.nombre, edad: a.edad, fcmax: a.fcmax, fc_reposo: a.fc_reposo,
+                    zonas: a.zonas, carrera: a.carrera, meta: a.meta },
+          inicio: a.inicio || null,
           semanas: a.semanas, registro: e.registro[id], ajustes: e.ajustes[id]
         }) };
       }
@@ -1106,7 +1256,7 @@ function rellenar(plan, inicio) {
 
     hoy: hoyISO,
     semanaDe: semanaDe,
-    hoy: hoyISO,
+    reajustarCarrera: reajustarCarrera,
     iso: function (d) {
       var m = d.getMonth() + 1, dd = d.getDate();
       return d.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (dd < 10 ? '0' : '') + dd;
@@ -1128,13 +1278,13 @@ function rellenar(plan, inicio) {
       if (['calidad', 'facil', 'larga'].indexOf(tipo) < 0) {
         return { ok: false, error: 'tipo invalido: usa calidad, facil o larga' };
       }
-      var a = atleta(id), n = semanaDe(fecha), f = filaSemana(id, n);
+      var a = atleta(id), n = semanaDe(fecha, id), f = filaSemana(id, n);
       if (!f) return { ok: false, error: 'semana fuera del plan' };
       var z = a.zonas, z2 = z.Z2, z5 = z.Z5;
       var etq = z.__modo === 'reserva' ? 'reserva' : '% FC máx';
       var e = cargar();
       var hecha = e.registro[id].filter(function (r) {
-        return semanaDe(r.fecha) === n && r.tipo === tipo;
+        return semanaDe(r.fecha, id) === n && r.tipo === tipo;
       })[0] || null;
       var quedan = Math.round((f.km - f.larga) * 10) / 10;   // km fuera de la larga
       var pasos = [];
@@ -1203,7 +1353,7 @@ function rellenar(plan, inicio) {
       }
 
       return {
-        ok: true, semana: n, tipo: tipo, fecha: fecha, fila: f, hecha: hecha,
+        ok: true, semana: n, total: a.semanas.length, tipo: tipo, fecha: fecha, fila: f, hecha: hecha,
         titulo: tipo === 'calidad' ? 'Calidad' : tipo === 'facil' ? 'Fácil' : 'Larga · ' + f.larga + ' km',
         resumen: tipo === 'calidad' ? String(f.calidad) + ' · con fuerza 15-20 min al final'
           : tipo === 'facil' ? '45-60 min en Z2 · suma volumen'

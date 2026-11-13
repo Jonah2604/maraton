@@ -654,7 +654,7 @@
 
   // ------------------------------------------------------------------ plan
   function pintarPlan() {
-    var d = A.leer(atleta), actual = A.semanaDe(A.hoy());
+    var d = A.leer(atleta), actual = A.semanaDe(A.hoy(), atleta);
     $('#pFilas').innerHTML = d.semanas.map(function (s) {
       var desc = [4, 8, 12, 16, 19].indexOf(s.n) >= 0;
       return '<tr class="' + (s.n === actual ? 'actual' : (desc ? 'desc' : '')) + '" data-w="' + s.n + '">' +
@@ -668,7 +668,7 @@
         var n = Number(tr.dataset.w);
         var lunes = new Date(Date.UTC(2026, 10, 9) + (n - 1) * 7 * 86400000);
         // Si la semana elegida es la de hoy, se queda en el dia de hoy; si no, abre su lunes.
-        diaSel = (n === A.semanaDe(A.hoy())) ? null : A.iso(lunes);
+        diaSel = (n === A.semanaDe(A.hoy(), atleta)) ? null : A.iso(lunes);
         vista = 'Hoy'; guardarUI(); pintarTodo();
         window.scrollTo(0, 0);
       };
@@ -689,7 +689,7 @@
   function pintarFeedback() {
     var b = A.balance(atleta);
     if (!b.ok) { $('#fTxt').textContent = b.error; return; }
-    $('#fSem').textContent = 'Semana ' + b.semana + ' de 21';
+    $('#fSem').textContent = 'Semana ' + b.semana + ' de ' + (b.total || 21);
     var kmPlan = b.fila ? b.fila.km : null;
     function ritmoTxt(m) { if (!m) return '–'; var mm = Math.floor(m), ss = Math.round((m - mm) * 60); return mm + ':' + (ss < 10 ? '0' : '') + ss; }
     $('#fChips').innerHTML =
@@ -908,7 +908,19 @@
     guardarUI();
     pintarTodo();
     pintarAjustes();
-    $('#ajAviso').textContent = 'Guardado · ' + r.perfil.nombre + ' · zonas con FC ' + r.fcmax;
+    var av = 'Guardado · ' + r.perfil.nombre + ' · zonas con FC ' + r.fcmax;
+    if (r.reajuste && r.reajuste.ok) {
+      av += ' · plan reajustado a ' + r.reajuste.semanas + ' semanas (carrera ' + fechaCorta(r.reajuste.carrera) +
+            ')'; 
+      if (r.reajuste.extra) av += ', ' + r.reajuste.extra + ' de mantenimiento';
+      if (r.reajuste.quitadas) av += ', ' + r.reajuste.quitadas + ' recortadas';
+    } else if (r.reajuste && !r.reajuste.ok && r.perfil.carrera) {
+      av = 'Perfil guardado, pero el plan no se pudo reajustar: ' + r.reajuste.error;
+      $('#ajAviso').textContent = av;
+      $('#ajAviso').className = 'aviso err';
+      return;
+    }
+    $('#ajAviso').textContent = av;
     $('#ajAviso').className = 'aviso ok';
   }
 
@@ -949,7 +961,7 @@
     fichaActual = r;
     $('#dTitulo').textContent = r.titulo;
     $('#dChips').innerHTML =
-      '<span class="chip">Semana ' + r.semana + ' de 21</span>' +
+      '<span class="chip">Semana ' + r.semana + ' de ' + (r.total || 21) + '</span>' +
       '<span class="chip">' + esc(r.fila.fechas) + '</span>' +
       '<span class="chip">Semana <b>' + r.fila.km + '</b> km</span>';
     $('#dResumen').textContent = r.resumen;
@@ -1019,10 +1031,14 @@
       $('#fAviso').className = 'aviso err';
       return;
     }
-    $('#fAviso').textContent = 'Guardado ✅';
+    var b = A.balance(atleta, $('#fFecha').value);
+    $('#fAviso').textContent = b.ok
+      ? 'Guardado ✅ · semana ' + b.semana + ': ' + b.kmHechos.toFixed(1) + ' de ' + (b.fila ? b.fila.km : '—') + ' km' +
+        (b.pendientes.length ? ' · falta ' + b.pendientes.join(', ') : ' · semana completa')
+      : 'Guardado ✅';
     $('#fAviso').className = 'aviso ok';
     pintarTodo();
-    setTimeout(function () { cerrarRegistro(); vista = 'Reg'; pintarTodo(); }, 550);
+    setTimeout(function () { cerrarRegistro(); vista = 'Reg'; pintarTodo(); }, 1400);
   };
 
   Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) {

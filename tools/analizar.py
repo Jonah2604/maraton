@@ -32,8 +32,11 @@ PALABRA_RIESGO = ("irradia", "hacia la pierna", "hormigueo", "adormec", "punzada
                   "no puedo apoyar", "hinchado", "clavada")
 
 
-def semana_de(f):
-    return max(1, min(21, (f - INICIO).days // 7 + 1))
+def semana_de(f, ini=None, tope=21):
+    """Semana del plan a la que cae una fecha. El inicio y el tope salen del plan exportado:
+    si la carrera se movio, el plan puede tener mas de 21 semanas."""
+    ini = ini or INICIO
+    return max(1, min(tope, (f - ini).days // 7 + 1))
 
 
 def parse_fecha(s):
@@ -62,14 +65,20 @@ def carga_export(ruta):
 
 def analiza(aid, plan, registro, hoy, forzar_semana=None):
     semanas = {s["n"]: s for s in plan.get("semanas", [])}
-    n = forzar_semana or semana_de(hoy)
+    tope = max(semanas) if semanas else 21
+    try:
+        ini = date.fromisoformat(str(plan.get("inicio") or ""))
+    except ValueError:
+        ini = INICIO
+    sem_de = lambda f: semana_de(f, ini, tope)
+    n = forzar_semana or sem_de(hoy)
     sem = semanas.get(n, {})
     filas = []
     for r in registro:
         f = parse_fecha(r.get("fecha", ""))
         if not f:
             continue
-        filas.append({**r, "_f": f, "_sem": semana_de(f)})
+        filas.append({**r, "_f": f, "_sem": sem_de(f)})
     filas.sort(key=lambda r: r["_f"])
 
     esta = [r for r in filas if r["_sem"] == n]
@@ -78,7 +87,17 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
     km_prev = round(sum(float(r.get("km") or 0) for r in prev), 1)
     plan_km = float(sem.get("km") or 0) or None
     pct = round(km / plan_km * 100) if plan_km else None
-    tipos = {r.get("tipo") for r in esta}
+    # Una sesion cuenta para su tipo solo si el ritmo es creible: 4 km en 44 min a FC 90
+    # es una caminata, aunque venga marcada como "calidad".
+    LIM = {"calidad": 8.5, "facil": 9.5, "larga": 10.5}      # min/km maximos
+
+    def ritmo_min(r):
+        k = float(r.get("km") or 0)
+        return float(r.get("min") or 0) / k if k else None
+
+    dudosas = [r for r in esta
+               if LIM.get(r.get("tipo")) and ritmo_min(r) and ritmo_min(r) > LIM[r.get("tipo")]]
+    tipos = {r.get("tipo") for r in esta if r not in dudosas}
     faltan = [t for t in ("calidad", "larga") if t not in tipos]
     techo = TECHOS.get(aid, 140)
 
@@ -100,7 +119,7 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
               if any(p in (r.get("molestia") or "").lower() for p in PALABRA_RIESGO)]
     esf_max = max([int(float(r.get("esf") or 0)) for r in esta], default=0)
 
-    fin_semana = INICIO + timedelta(days=n * 7 - 1)      # domingo de esa semana
+    fin_semana = ini + timedelta(days=n * 7 - 1)      # domingo de esa semana
     cerrada = hoy >= fin_semana      # el domingo por la noche ya se revisa la semana
     banderas, decision, cambios = [], "seguir", {}
 
@@ -112,7 +131,7 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
     elif pct > 115:
         decision = "recortar"
         banderas.append(f"{km} km contra {plan_km} del plan ({pct}%): te pasaste de carga")
-    elif pct < 70 or (faltan and "larga" in faltan and n == semana_de(hoy)):
+    elif pct < 70 or (faltan and "larga" in faltan and n == sem_de(hoy)):
         decision = "bajar"
         banderas.append(f"cumpliste {km} de {plan_km} km ({pct}%)" +
                         (f"; falto {', '.join(faltan)}" if faltan else ""))
@@ -133,6 +152,10 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
         banderas.append(f"{len(fc_alta)} facil(es) con FC media sobre el techo de Z2: " + ", ".join(det))
         if decision == "seguir":
             decision = "repetir"
+    for r in dudosas:
+        banderas.append(f"la del {r.get('fecha')} marcada como {r.get('tipo')} fue caminata "
+                        f"({ritmo(float(r.get('min') or 0), float(r.get('km') or 0))}/km, "
+                        f"FC {r.get('fc_media') or '—'}): no cuenta como {r.get('tipo')} de la semana")
     if esf_max >= 9:
         banderas.append(f"esfuerzo {esf_max}/10 reportado")
 
