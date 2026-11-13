@@ -43,6 +43,20 @@ Cuatro puertas, sin instalar nada:
 3. **Webhook** — la app manda el estado completo en cada cambio (`POST`, JSON).
 4. **Importar/exportar** — archivo JSON de ida y vuelta.
 
+### Receptor listo: el agente se entera solo
+
+`tools/maraton_webhook.py` recibe el POST y despierta al agente (`hermes send`) con un resumen
+de las últimas sesiones, para que revise el plan con sus propias herramientas y conteste.
+
+- Escucha en `127.0.0.1:8787/hook/<SECRETO>`; sin el secreto responde 403.
+- Sólo avisa de los atletas en `MARATON_ATLETAS` (`jonah,yuli`); los demás se registran y nada más.
+- Guarda cada aviso en `%LOCALAPPDATA%\hermes\cache\maraton\avisos.jsonl` y el último estado en `ultimo.json`.
+- En la app: pestaña **Agente → Webhook** con `http://127.0.0.1:8787/hook/<SECRETO>`.
+- Se levanta con la tarea de Windows **Maraton_Receptor** (al iniciar sesión); si se cae, Windows la reinicia.
+
+El aviso lleva `atleta`, `sesiones` y `perfil` de quien cambió, no el archivo completo: el agente
+sabe a quién responder y no tiene que adivinar.
+
 Clave de almacenamiento: `maraton.v1` en `localStorage`.
 Estado: `{api, registro:{jonah,yuli}, ajustes:{jonah,yuli}, perfiles:{}, webhook}`.
 
