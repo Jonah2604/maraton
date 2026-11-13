@@ -189,7 +189,7 @@
   <section id="vHoy">
     <div class="card marco">
       <div class="fila"><h2 style="margin:0">Semana</h2><span class="chip" id="hFechas"></span></div>
-      <div class="sem" style="margin-top:8px"><span id="hNum">1</span><small> / 21</small><span class="peq" id="hDiaSel" style="display:inline"></span></div>
+      <div class="sem" style="margin-top:8px"><span id="hNum">1</span><small> / <span id="hTotal">21</span></small><span class="peq" id="hDiaSel" style="display:inline"></span></div>
       <div class="dias" id="hDias"></div>
       <div class="chips">
         <span class="chip">Total <b id="hKm">–</b> km</span>
@@ -503,10 +503,12 @@
 
   // ---------------------------------------------------------------- atletas
   // La barra muestra uno o dos lugares segun el ajuste; el nombre sale del perfil guardado.
-  var dosAtletas = true;
+  // Un solo lugar en la barra: cada quien ve lo suyo y cambia con el boton de al lado.
+  var dosAtletas = false;
 
   function pintarAtletas() {
-    var lista = A.corredores().corredores;
+    var todos = A.corredores().corredores;
+    var lista = todos;
     if (!dosAtletas) {
       var solo = lista.filter(function (a) { return a.id === atleta; });
       lista = solo.length ? solo : lista.slice(0, 1);
@@ -519,6 +521,17 @@
     Array.prototype.forEach.call(document.querySelectorAll('#atletas button'), function (b) {
       b.onclick = function () { atleta = b.dataset.at; guardarUI(); pintarTodo(); };
     });
+    // Con una sola tab hace falta una salida: el boton pasa al otro corredor.
+    // Va despues del forEach, que si no le pisa el onclick con un data-at vacio.
+    if (!dosAtletas && todos.length > 1) {
+      var i = 0, j;
+      for (j = 0; j < todos.length; j++) if (todos[j].id === atleta) i = j;
+      var otro = todos[(i + 1) % todos.length];
+      var cambiar = document.createElement('button');
+      cambiar.textContent = '⇄ ' + (otro.nombre || otro.id);
+      cambiar.onclick = function () { atleta = otro.id; guardarUI(); pintarTodo(); };
+      $('#atletas').appendChild(cambiar);
+    }
   }
 
   function guardarUI() {
@@ -609,6 +622,8 @@
     $('#hFcmax').textContent = d.atleta.fcmax;
     $('#mCarrera').textContent = d.atleta.carrera ? ('· ' + fechaCorta(d.atleta.carrera)) : '· sin carrera';
     $('#hNum').textContent = h.semana;
+    var tTot = $('#hTotal');
+    if (tTot) tTot.textContent = A.leer(atleta).semanas.length;
     $('#hFechas').textContent = f.fechas;
     if ($('#hDiaSel')) $('#hDiaSel').textContent = diaSel ? (' · viendo ' + diaSel.split('-').reverse().join('/')) : '';
     $('#hKm').textContent = f.km;
@@ -680,9 +695,11 @@
       };
     });
     var suma = d.semanas.reduce(function (a, s) { return a + (s.km || 0); }, 0);
-    var entreno = d.semanas.filter(function (s) { return s.n < 21; })
+    // El tope sale del plan, no del 21 de la plantilla: un plan reajustado tiene otras semanas.
+    var total = d.semanas.length;
+    var entreno = d.semanas.filter(function (s) { return s.n < total; })
                            .reduce(function (a, s) { return a + (s.km || 0); }, 0);
-    var carrera = d.semanas.filter(function (s) { return s.n === 21; })
+    var carrera = d.semanas.filter(function (s) { return s.n === total; })
                            .reduce(function (a, s) { return a + (s.km || 0); }, 0);
     $('#pTotal').textContent = 'Entrenamiento ' + Math.round(entreno) + ' km + carrera ' +
       (carrera % 1 ? carrera.toFixed(1) : Math.round(carrera)) + ' km = ' + suma.toFixed(1).replace('.0','') + ' km' +
@@ -932,7 +949,7 @@
       return;
     }
     atleta = r.id;
-    dosAtletas = A.corredores().corredores.length > 1;
+    // Antes se encendia solo cada vez que habia dos corredores; ahora manda la preferencia.
     guardarUI(); pintarAtletas(); pintarAjustes();
     $('#nuevo').classList.remove('abierta');
     $('#ajAviso').textContent = r.nombre + ' · ' + nombreMeta(r.objetivo || 'base') + ', ' +
