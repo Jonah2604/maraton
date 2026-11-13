@@ -14,6 +14,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -112,7 +113,11 @@ class Manejador(BaseHTTPRequestHandler):
                      + ("Ultimas: " + " | ".join(partes_txt) if partes_txt else "Sin sesiones en el aviso.")
                      + (" Nota del corredor: " + nota if nota else "")
                      + " Revisa con tools/analizar.py y da feedback.")
-            avisar_al_agente(texto[:900])
+            # El aviso al agente puede tardar (hermes send tarda hasta 2 min): va aparte
+            # para contestarle a la app de inmediato. Si no, el celular se queda esperando
+            # y termina marcando "no llego" aunque si entro.
+            hilo = threading.Thread(target=avisar_al_agente, args=(texto[:900],), daemon=True)
+            hilo.start()
         return self._responder(200, {"ok": True, "atleta": atleta})
 
 

@@ -43,7 +43,7 @@
 
   function vacio() {
     return { api: VERSION, registro: { jonah: [], yuli: [] }, ajustes: { jonah: [], yuli: [] },
-             perfiles: {}, planes: {}, notas: {}, webhook: null, salida: null };   // salida=null -> lo de abajo no se toco nunca
+             perfiles: {}, planes: {}, notas: {}, webhook: null, salida: null, ultimoAviso: null, pendientes: [] };   // salida=null -> lo de abajo no se toco nunca
   }
 
   // Lee el estado y descarta lo que no tenga forma valida: una fila mala no tumba la app.
@@ -66,6 +66,9 @@
       if (Array.isArray(a)) base.ajustes[id] = a.filter(function (x) { return x && typeof x === 'object'; });
     });
     if (typeof e.webhook === 'string' && /^https?:\/\//.test(e.webhook)) base.webhook = e.webhook;
+    // Estado del aviso: sirve para saber desde el telefono si el agente se entero o no.
+    if (e.ultimoAviso && typeof e.ultimoAviso === 'object') base.ultimoAviso = e.ultimoAviso;
+    if (Array.isArray(e.pendientes)) base.pendientes = e.pendientes.slice(-30);
     // Salida del registro: si se guardo (aunque sea con los dos apagados) mandan los dos campos.
     if (e.salida && typeof e.salida === 'object') {
       base.salida = { jonah: e.salida.jonah !== false, yuli: e.salida.yuli !== false };
@@ -931,7 +934,7 @@ function rellenar(plan, inicio) {
       };
       e.registro[id].push(fila);
       if (!guardar(e)) return { ok: false, error: 'no se pudo guardar (almacen lleno o bloqueado)' };
-      avisar(id);
+      avisar(id, 'sesion');
       return { ok: true, sesion: fila, total: e.registro[id].length };
     },
 
@@ -1078,7 +1081,13 @@ function rellenar(plan, inicio) {
 
     // Aviso al agente externo. Nunca bloquea ni rompe: si el endpoint esta caido, la app sigue.
     // Manda SOLO el atleta que cambio (no todo el archivo) para que el agente sepa a quien reaccionar.
-    avisar: function (id) { avisar(id); return { ok: true }; },
+    avisar: function (id, motivo) { avisar(id, motivo || 'manual'); return { ok: true }; },
+
+    // Estado del ultimo aviso y cuantos quedaron en cola (para el boton Probar).
+    estadoAviso: function () { var e = cargar(); return { ultimoAviso: e.ultimoAviso || null, pendientes: (e.pendientes || []).length }; },
+
+    // Al abrir la app: si hubo avisos que no salieron, se reenvian. Devuelve cuantos.
+    reenviar: function () { return reenviarPendientes(); },
 
     // Aplica un #agent=<json> si viene en la URL. Devuelve que hizo, para poder probarlo.
     aplicarHash: function () {
@@ -1342,33 +1351,80 @@ function rellenar(plan, inicio) {
     },
   };
 
-  function avisar(id) {
+  // Deja el aviso en la cola local. Si el celular no tiene salida al agente en ese momento,
+  // al abrir la app otra vez se reenvia: una sesion registrada no se pierde por falta de red.
+  function encolar(e, cuerpo, motivo) {
+    e.pendientes = (e.pendientes || []).concat([{ cuando: cuerpo.cuando, atleta: cuerpo.atleta, motivo: motivo || 'cambio' }]).slice(-30);
+    guardar(e);
+  }
+
+  function avisar(id, motivo) {
     var e = cargar();
     if (!e.webhook) return;
     try {
       var quien = (id && e.registro[id]) ? id : null;
-      var cuerpo = { api: VERSION, cuando: new Date().toISOString(),
+      var cuerpo = { api: VERSION, cuando: new Date().toISOString(), motivo: motivo || 'cambio',
         atleta: quien, registro: e.registro, ajustes: e.ajustes };
       if (quien) {
         cuerpo.sesiones = e.registro[quien].slice();
         cuerpo.perfil = e.perfiles[quien] || null;
       }
-      var txt = JSON.stringify(cuerpo);
-      if (typeof fetch === 'function') {
-        // mode:'cors' a proposito: el receptor contesta CORS y asi se puede ver si entro.
-        // Con 'no-cors' la peticion falla en silencio (502, URL sin /maraton) y parece que la app no aviso.
-        var opciones = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: txt };
-        var aFondo = function () {
-          try { e.ultimoAviso = { cuando: new Date().toISOString(), ok: false }; guardar(e); } catch (x) {}
-        };
-        fetch(e.webhook, opciones).then(function (r) {
-          try { e.ultimoAviso = { cuando: new Date().toISOString(), ok: !!r && r.ok, codigo: r ? r.status : 0 }; guardar(e); } catch (x) {}
-        }).catch(function () {
-          try { fetch(e.webhook, Object.assign({ mode: 'no-cors', keepalive: true }, opciones)); } catch (x) {}
-          aFondo();
-        });
-      }
+      // Se apunta ANTES de intentar: si el telefono no tiene salida al agente ahora (Tailscale
+      // apagado, PC dormida), la sesion queda en la cola y se reenvia al abrir la app.
+      encolar(e, cuerpo, motivo);
+      enviar(e.webhook, JSON.stringify(cuerpo));
     } catch (x) {}
+  }
+
+  // Manda un cuerpo al webhook y deja anotado si entro. Devuelve inmediatamente.
+  function enviar(url, txt) {
+    if (typeof fetch !== 'function') return;
+    // mode:'cors' a proposito: el receptor contesta CORS y asi se sabe si entro o no.
+    // Con 'no-cors' el fallo es invisible (asi se perdieron avisos con la URL sin /maraton).
+    var opciones = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: txt };
+    var apuntar = function (ok, codigo, fallo) {
+      try {
+        var e2 = cargar();
+        e2.ultimoAviso = { cuando: new Date().toISOString(), ok: ok, codigo: codigo || 0, fallo: fallo || null };
+        if (ok) e2.pendientes = [];
+        guardar(e2);
+        if (global.document && typeof CustomEvent === 'function') {
+          try { global.document.dispatchEvent(new CustomEvent('agente:aviso')); } catch (x) {}
+        }
+      } catch (x) {}
+    };
+    // Segundo intento sin CORS: sirve cuando el receptor no contesta las cabeceras de permiso.
+    // Se le pega el .catch() porque si no, un rechazo suelta un error sin dueño.
+    var respaldo = function () {
+      try {
+        fetch(url, { method: 'POST', mode: 'no-cors', keepalive: true, body: txt,
+                     headers: { 'Content-Type': 'text/plain' } }).catch(function () {});
+      } catch (x) {}
+    };
+    // El envio va dentro de su propio try: si algo de esto truena, el aviso ya quedo en cola.
+    var intento = function () {
+      fetch(url, opciones).then(function (r) {
+        if (r && r.ok) { apuntar(true, r.status); return; }
+        apuntar(false, r ? r.status : 0, 'el receptor contesto ' + (r ? r.status : '?'));
+      }).catch(function (err) {
+        respaldo();
+        apuntar(false, 0, 'sin salida al agente (' + ((err && err.message) || 'red') + ')');
+      });
+    };
+    try { intento(); } catch (x) {}
+  }
+
+  // Reenvia lo que quedo pendiente de avisos anteriores. Se llama al abrir la app.
+  function reenviarPendientes() {
+    var e = cargar();
+    if (!e.webhook || !e.pendientes || !e.pendientes.length) return 0;
+    var quien = e.pendientes[e.pendientes.length - 1].atleta;
+    if (!quien || !e.registro[quien]) return 0;
+    var cuerpo = { api: VERSION, cuando: new Date().toISOString(), motivo: 'reenvio',
+      atleta: quien, sesiones: e.registro[quien].slice(), perfil: e.perfiles[quien] || null,
+      registro: e.registro, ajustes: e.ajustes, pendientes: e.pendientes.length };
+    enviar(e.webhook, JSON.stringify(cuerpo));
+    return e.pendientes.length;
   }
 
   // Recoge un #agent=... al cargar, sin depender de que la UI exista.

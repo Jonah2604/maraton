@@ -759,7 +759,7 @@
     $('#aDocs').textContent = A.docs();
     var e = JSON.parse(localStorage.getItem('maraton.v1') || '{}');
     $('#aWebhook').value = e.webhook || '';
-    var ua = e.ultimoAviso;
+    var ua = A.estadoAviso().ultimoAviso;
     $('#aW').textContent = ua ? ('Último aviso: ' + (ua.ok ? 'entregado ✅' : 'no llegó ❌') + ' · ' +
       new Date(ua.cuando).toLocaleString('es-MX')) : '';
     $('#aQuien').textContent = d.atleta.nombre;
@@ -1515,15 +1515,23 @@
     }
     $('#aW').textContent = 'Probando…';
     $('#aW').className = 'aviso';
-    A.avisar(atleta);
-    setTimeout(function () {
-      var e = JSON.parse(localStorage.getItem('maraton.v1') || '{}');
-      var ua = e.ultimoAviso;
-      if (!ua) { $('#aW').textContent = 'Sin respuesta todavía: revisa Tailscale y que el receptor esté prendido.'; $('#aW').className = 'aviso err'; return; }
-      $('#aW').textContent = ua.ok ? 'Entregado ✅ · ' + new Date(ua.cuando).toLocaleTimeString('es-MX')
-        : 'No llegó ❌ (código ' + (ua.codigo || 0) + '). Revisa que la URL traiga /maraton y que Tailscale esté prendido en la PC.';
-      $('#aW').className = 'aviso ' + (ua.ok ? 'ok' : 'err');
-    }, 3500);
+    A.avisar(atleta, 'prueba');
+    var intentos = 0;
+    var mirar = setInterval(function () {
+      intentos++;
+      var st = A.estadoAviso();
+      var ua = st.ultimoAviso;
+      if (ua) {
+        clearInterval(mirar);
+        $('#aW').textContent = ua.ok ? 'Entregado ✅ · ' + new Date(ua.cuando).toLocaleTimeString('es-MX')
+          : 'No llegó ❌ ' + (ua.fallo || '') + '. Queda en cola y se reenvía al abrir la app.';
+        $('#aW').className = 'aviso ' + (ua.ok ? 'ok' : 'err');
+      } else if (intentos >= 6) {
+        clearInterval(mirar);
+        $('#aW').textContent = 'Sin respuesta. Revisa que Tailscale esté prendido en la PC.';
+        $('#aW').className = 'aviso err';
+      }
+    }, 800);
   };
 
   $('#bCopiar').onclick = function () {
@@ -1552,7 +1560,23 @@
   // El puente avisa cuando aplica un #agent=... y cuando algo cambia desde fuera.
   document.addEventListener('agente:listo', pintarTodo);
   document.addEventListener('agente:cambio', pintarTodo);
+  document.addEventListener('agente:aviso', function () {
+    var st = A.estadoAviso();
+    if (st.ultimoAviso && $('#aWebhook')) {
+      $('#aW').textContent = (st.ultimoAviso.ok ? 'Último aviso entregado ✅ · ' : 'Último aviso no llegó ❌ · ') +
+        new Date(st.ultimoAviso.cuando).toLocaleString('es-MX') +
+        (st.pendientes ? ' · ' + st.pendientes + ' en cola' : '');
+      $('#aW').className = 'aviso ' + (st.ultimoAviso.ok ? 'ok' : 'err');
+    }
+  });
   window.__refrescar = pintarTodo;
+
+  // Lo que quedo sin salir en la sesion anterior se reenvia cuando hay red.
+  var reenvio = function () {
+    try { if (A.reenviar() > 0) pintarTodo(); } catch (x) {}
+  };
+  setTimeout(reenvio, 2500);
+  window.addEventListener('online', reenvio);
   // ------------------------------------------------------------ service worker
   if ('serviceWorker' in navigator && (location.protocol === 'https:' ||
       location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
