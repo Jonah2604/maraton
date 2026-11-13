@@ -1355,9 +1355,18 @@ function rellenar(plan, inicio) {
       }
       var txt = JSON.stringify(cuerpo);
       if (typeof fetch === 'function') {
-        fetch(e.webhook, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                           body: txt, mode: 'no-cors', keepalive: true })
-          .catch(function () { /* si el agente esta caido, la app sigue igual */ });
+        // mode:'cors' a proposito: el receptor contesta CORS y asi se puede ver si entro.
+        // Con 'no-cors' la peticion falla en silencio (502, URL sin /maraton) y parece que la app no aviso.
+        var opciones = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: txt };
+        var aFondo = function () {
+          try { e.ultimoAviso = { cuando: new Date().toISOString(), ok: false }; guardar(e); } catch (x) {}
+        };
+        fetch(e.webhook, opciones).then(function (r) {
+          try { e.ultimoAviso = { cuando: new Date().toISOString(), ok: !!r && r.ok, codigo: r ? r.status : 0 }; guardar(e); } catch (x) {}
+        }).catch(function () {
+          try { fetch(e.webhook, Object.assign({ mode: 'no-cors', keepalive: true }, opciones)); } catch (x) {}
+          aFondo();
+        });
       }
     } catch (x) {}
   }

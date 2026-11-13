@@ -57,15 +57,17 @@ class Manejador(BaseHTTPRequestHandler):
         self.send_response(codigo)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(cuerpo)))
+        self.send_header("Access-Control-Allow-Origin", "*")   # la app es otro origen (github.io)
         self.end_headers()
         self.wfile.write(cuerpo)
 
     def do_OPTIONS(self):
-        # La app manda mode:'no-cors', pero un navegador de prueba si pide preflight.
+        # La app manda mode:'cors' para poder ver si el aviso entro (y si no, el motivo).
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Max-Age", "600")
         self.end_headers()
 
     def do_POST(self):

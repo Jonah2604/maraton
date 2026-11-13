@@ -314,6 +314,7 @@
         estado en cada cambio.</p>
       <input id="aWebhook" placeholder="https://mi-agente/maraton" inputmode="url">
       <button class="bt" style="width:100%;margin-top:8px" id="bWebhook">Guardar webhook</button>
+      <button class="bt" style="width:100%;margin-top:8px" id="bProbar">Probar aviso</button>
       <div class="aviso" id="aW"></div>
     </div>
 
@@ -758,6 +759,9 @@
     $('#aDocs').textContent = A.docs();
     var e = JSON.parse(localStorage.getItem('maraton.v1') || '{}');
     $('#aWebhook').value = e.webhook || '';
+    var ua = e.ultimoAviso;
+    $('#aW').textContent = ua ? ('Último aviso: ' + (ua.ok ? 'entregado ✅' : 'no llegó ❌') + ' · ' +
+      new Date(ua.cuando).toLocaleString('es-MX')) : '';
     $('#aQuien').textContent = d.atleta.nombre;
     $('#aFcmax').textContent = d.atleta.fcmax;
     $('#aCarrera').textContent = d.atleta.carrera ? ('Carrera ' + fechaCorta(d.atleta.carrera)) : 'sin carrera';
@@ -1500,6 +1504,26 @@
     var r = A.webhook($('#aWebhook').value.trim());
     $('#aW').textContent = r.ok ? (r.webhook ? 'Webhook guardado ✅' : 'Webhook quitado') : r.error;
     $('#aW').className = 'aviso ' + (r.ok ? 'ok' : 'err');
+  };
+
+  // Manda un aviso de prueba y dice si llego de verdad (no solo si se disparo).
+  $('#bProbar').onclick = function () {
+    if (!$('#aWebhook').value.trim()) {
+      $('#aW').textContent = 'Primero guarda el webhook.';
+      $('#aW').className = 'aviso err';
+      return;
+    }
+    $('#aW').textContent = 'Probando…';
+    $('#aW').className = 'aviso';
+    A.avisar(atleta);
+    setTimeout(function () {
+      var e = JSON.parse(localStorage.getItem('maraton.v1') || '{}');
+      var ua = e.ultimoAviso;
+      if (!ua) { $('#aW').textContent = 'Sin respuesta todavía: revisa Tailscale y que el receptor esté prendido.'; $('#aW').className = 'aviso err'; return; }
+      $('#aW').textContent = ua.ok ? 'Entregado ✅ · ' + new Date(ua.cuando).toLocaleTimeString('es-MX')
+        : 'No llegó ❌ (código ' + (ua.codigo || 0) + '). Revisa que la URL traiga /maraton y que Tailscale esté prendido en la PC.';
+      $('#aW').className = 'aviso ' + (ua.ok ? 'ok' : 'err');
+    }, 3500);
   };
 
   $('#bCopiar').onclick = function () {
