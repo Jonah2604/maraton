@@ -908,6 +908,7 @@ function rellenar(plan, inicio) {
       if (!campos || typeof campos !== 'object') return { ok: false, error: 'falta el perfil' };
       var e = cargar();
       var p = e.perfiles[id] || {};
+      var carreraAntes = p.carrera || null;   // para deshacer si el plan no cabe con la nueva
       if (campos.nombre !== undefined) {
         var n = String(campos.nombre).trim().slice(0, 40);
         if (n.length < 2) return { ok: false, error: 'el nombre necesita al menos 2 letras' };
@@ -947,7 +948,15 @@ function rellenar(plan, inicio) {
       // Cambiar la fecha de la carrera mueve el calendario del plan: si no, las semanas
       // se quedan ancladas a la fecha vieja y la app sigue contando la semana por el 9 nov.
       var reajuste = null;
-      if (campos.carrera !== undefined && p.carrera) reajuste = reajustarCarrera(id, p.carrera);
+      if (campos.carrera !== undefined && p.carrera) {
+        reajuste = reajustarCarrera(id, p.carrera);
+        // Si el plan no cabe con esa fecha se deshace el cambio: no se deja un perfil con una
+        // carrera que el calendario del plan no puede cumplir.
+        if (!reajuste.ok) {
+          p.carrera = carreraAntes;
+          e = cargar(); e.perfiles[id] = p; guardar(e);
+        }
+      }
       var a = atleta(id);
       return { ok: true, perfil: p, zonas: a.zonas, fcmax: a.fcmax, reajuste: reajuste };
     },

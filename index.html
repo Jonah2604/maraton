@@ -706,7 +706,8 @@
     $('#fTxt').textContent = lineas.join(' ');
     var av = b.avisos.slice();
     av.push(b.pendientes.length ? 'Pendiente: ' + b.pendientes.join(', ') + '.'
-      : 'Las tres de la semana están hechas.');
+      : (b.dudosas && b.dudosas.length ? 'Los tipos están cubiertos, pero revisa la sesión dudosa de arriba.'
+                                        : 'Las tres de la semana están hechas.'));
     if (b.proxima) av.push('Siguiente (' + b.proxima.fechas + '): ' + b.proxima.km + ' km, larga de ' + b.proxima.larga + ' km.');
     $('#fAvisos').innerHTML = av.map(function (t) { return '<div class="peq">• ' + esc(t) + '</div>'; }).join('');
   }
@@ -914,8 +915,10 @@
             ')'; 
       if (r.reajuste.extra) av += ', ' + r.reajuste.extra + ' de mantenimiento';
       if (r.reajuste.quitadas) av += ', ' + r.reajuste.quitadas + ' recortadas';
-    } else if (r.reajuste && !r.reajuste.ok && r.perfil.carrera) {
-      av = 'Perfil guardado, pero el plan no se pudo reajustar: ' + r.reajuste.error;
+    } else if (r.reajuste && !r.reajuste.ok) {
+      av = 'No se cambió la fecha: ese calendario no cabe. ' + r.reajuste.error +
+           ' (la carrera sigue el ' + fechaCorta(r.perfil.carrera) + ')';
+      pintarAjustes();
       $('#ajAviso').textContent = av;
       $('#ajAviso').className = 'aviso err';
       return;
