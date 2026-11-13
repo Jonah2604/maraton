@@ -48,10 +48,11 @@ Cuatro puertas, sin instalar nada:
 `tools/maraton_webhook.py` recibe el POST y despierta al agente (`hermes send`) con un resumen
 de las últimas sesiones, para que revise el plan con sus propias herramientas y conteste.
 
-- Escucha en `127.0.0.1:8787/hook/<SECRETO>`; sin el secreto responde 403.
+- Escucha en `127.0.0.1:8788/hook/<SECRETO>`; sin el secreto responde 403.
 - Sólo avisa de los atletas en `MARATON_ATLETAS` (`jonah,yuli`); los demás se registran y nada más.
 - Guarda cada aviso en `%LOCALAPPDATA%\hermes\cache\maraton\avisos.jsonl` y el último estado en `ultimo.json`.
-- En la app: pestaña **Agente → Webhook** con `http://127.0.0.1:8787/hook/<SECRETO>`.
+- En la app: pestaña **Agente → Webhook**. Desde la PC: `http://127.0.0.1:8788/hook/<SECRETO>`.
+  Desde el celular (con Tailscale encendido): `https://desktop-td96g5o.tail90ea86.ts.net/maraton/hook/<SECRETO>`.
 - Se levanta con la tarea de Windows **Maraton_Receptor** (al iniciar sesión); si se cae, Windows la reinicia.
 
 El aviso lleva `atleta`, `sesiones` y `perfil` de quien cambió, no el archivo completo: el agente
