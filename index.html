@@ -1169,11 +1169,13 @@
   }
   // Cabeceras de fecha que se reconocen solas. Si no aparece ninguna, se abre el mapeo.
   var ALIAS = {
-    fecha: ['activity date', 'date', 'fecha', 'fecha de inicio', 'start time', 'start date', 'when',
-            'timestamp', 'time', 'dia', 'día', 'date/time', 'data'],
+    fecha: ['activity date', 'fecha de la actividad', 'date', 'fecha', 'fecha de inicio', 'start time',
+            'start date', 'when', 'timestamp', 'time', 'dia', 'día', 'date/time', 'data'],
     km: ['distance', 'distancia', 'distancia (km)', 'distancia (m)', 'km', 'kilometers', 'distance (km)'],
-    min: ['moving time', 'elapsed time', 'time', 'tiempo', 'duracion', 'duración', 'duration',
-          'minutos', 'minutes', 'tiempo en movimiento', 'moving time (s)'],
+    // 'moving time' primero: en el CSV de Garmin "Tiempo en movimiento" viene en segundos,
+    // igual que "Moving Time" de Strava. Si se toma "Duración" (hh:mm:ss) primero, se lee como segundos.
+    min: ['moving time', 'tiempo en movimiento', 'elapsed time', 'duration', 'duracion', 'duración',
+          'tiempo', 'minutos', 'minutes', 'moving time (s)'],
     tipo: ['activity type', 'type', 'tipo', 'actividad', 'sport', 'deporte'],
     fc: ['average heart rate', 'avg hr', 'average_hr', 'fc media', 'pulso medio', 'average hr',
          'frecuencia cardiaca media', 'heart rate'],
