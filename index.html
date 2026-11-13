@@ -514,7 +514,7 @@
     }
     $('#atletas').innerHTML = lista.map(function (a) {
       return '<button data-at="' + a.id + '" class="' + (a.id === atleta ? 'on' : '') + '">' +
-             esc(a.nombre) + ' · FC ' + a.fcmax + '</button>';
+             esc(a.nombre || a.id) + ' · FC ' + (a.fcmax || '—') + '</button>';
     }).join('');
     Array.prototype.forEach.call(document.querySelectorAll('#atletas button'), function (b) {
       b.onclick = function () { atleta = b.dataset.at; guardarUI(); pintarTodo(); };

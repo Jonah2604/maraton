@@ -723,8 +723,11 @@ function rellenar(plan, inicio) {
                    semanas: a.semanas.length, oculto: false });
       }
       for (k in e.planes) if (e.planes.hasOwnProperty(k)) {
+        // `planes` tambien guarda el plan reajustado de la plantilla (jonah, yuli). Esos
+        // ya salieron arriba: sin este salto la barra mostraba a Jonah dos veces.
+        if (PLANES_BASE.atletas.hasOwnProperty(k)) continue;
         var b = atleta(k);
-        out.push({ id: k, nombre: b.nombre, fcmax: b.fcmax, fc_reposo: b.fc_reposo, zonas: b.zonas,
+        out.push({ id: k, nombre: b.nombre || k, fcmax: b.fcmax || null, fc_reposo: b.fc_reposo, zonas: b.zonas,
                    carrera: b.carrera, meta: b.meta, base: false, registros: e.registro[k].length,
                    semanas: b.semanas.length, oculto: false });
       }
