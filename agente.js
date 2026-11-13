@@ -1192,7 +1192,7 @@ function rellenar(plan, inicio) {
         return { ok: true, json: JSON.stringify({
           api: VERSION, exportado: new Date().toISOString(),
           atleta: { id: id, nombre: a.nombre, edad: a.edad, fcmax: a.fcmax, fc_reposo: a.fc_reposo,
-                    zonas: a.zonas, carrera: a.carrera, meta: a.meta },
+                    zonas: a.zonas, carrera: a.carrera, meta: a.meta, inicio: a.inicio || null },
           inicio: a.inicio || null,
           semanas: a.semanas, registro: e.registro[id], ajustes: e.ajustes[id]
         }) };
@@ -1247,6 +1247,14 @@ function rellenar(plan, inicio) {
 
     // Al abrir la app: si hubo avisos que no salieron, se reenvian. Devuelve cuantos.
     reenviar: function () { return reenviarPendientes(); },
+
+    feedback: feedback,
+
+    // Lo ultimo que contesto la PC, para pintarlo al abrir sin esperar la red.
+    feedbackGuardado: function (id) {
+      var e = cargar();
+      return (e.ultimoFeedback || {})[id] || null;
+    },
 
     // Aplica un #agent=<json> si viene en la URL. Devuelve que hizo, para poder probarlo.
     aplicarHash: function () {
@@ -1527,6 +1535,10 @@ function rellenar(plan, inicio) {
       if (quien) {
         cuerpo.sesiones = e.registro[quien].slice();
         cuerpo.perfil = e.perfiles[quien] || null;
+        // El plan viaja con el aviso: la PC necesita las semanas para poder contestar
+        // el analisis solo, sin depender de que el agente este despierto.
+        var ac = atleta(quien);
+        cuerpo.plan = { inicio: ac.inicio || null, semanas: ac.semanas };
       }
       // Se apunta ANTES de intentar: si el telefono no tiene salida al agente ahora (Tailscale
       // apagado, PC dormida), la sesion queda en la cola y se reenvia al abrir la app.
@@ -1573,14 +1585,39 @@ function rellenar(plan, inicio) {
     try { intento(); } catch (x) {}
   }
 
+  // Lo que la PC ya analizo. La app lo pinta en su pantalla: el feedback se lee aqui,
+  // no en el chat del agente.
+  function feedback(id) {
+    var e = cargar();
+    if (!e.webhook) return Promise.resolve({ ok: false, error: 'sin receptor configurado' });
+    var m = /\/hook\/([^\/?#]+)/.exec(e.webhook);
+    if (!m) return Promise.resolve({ ok: false, error: 'la URL no tiene /hook/<secreto>' });
+    var base = e.webhook.slice(0, e.webhook.indexOf('/hook/'));
+    var url = base + '/feedback/' + m[1] + '/' + encodeURIComponent(id) + '?t=' + Date.now();
+    if (typeof fetch !== 'function') return Promise.resolve({ ok: false, error: 'sin fetch' });
+    return fetch(url).then(function (r) { return r.json(); }).then(function (j) {
+      try {
+        var e2 = cargar();
+        e2.ultimoFeedback = e2.ultimoFeedback || {};
+        e2.ultimoFeedback[id] = j;
+        guardar(e2);
+      } catch (x) {}
+      return j;
+    }).catch(function (err) {
+      return { ok: false, error: 'sin salida al receptor (' + ((err && err.message) || 'red') + ')' };
+    });
+  }
+
   // Reenvia lo que quedo pendiente de avisos anteriores. Se llama al abrir la app.
   function reenviarPendientes() {
     var e = cargar();
     if (!e.webhook || !e.pendientes || !e.pendientes.length) return 0;
     var quien = e.pendientes[e.pendientes.length - 1].atleta;
     if (!quien || !e.registro[quien]) return 0;
+    var ap = atleta(quien);
     var cuerpo = { api: VERSION, cuando: new Date().toISOString(), motivo: 'reenvio',
       atleta: quien, sesiones: e.registro[quien].slice(), perfil: e.perfiles[quien] || null,
+      plan: { inicio: ap.inicio || null, semanas: ap.semanas },
       registro: e.registro, ajustes: e.ajustes, pendientes: e.pendientes.length };
     enviar(e.webhook, JSON.stringify(cuerpo));
     return e.pendientes.length;

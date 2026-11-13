@@ -11,6 +11,7 @@ Prueba:  curl -X POST http://127.0.0.1:8787/hook/<SECRETO> -d '{"atleta":"jonah"
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -25,6 +26,8 @@ VIGILAR = [a.strip().lower() for a in os.environ.get("MARATON_ATLETAS", "jonah")
 DESTINO = os.environ.get("MARATON_DESTINO", "telegram")
 CACHE = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "hermes" / "cache" / "maraton"
 LOG = CACHE / "avisos.jsonl"
+APP = Path(__file__).resolve().parent.parent          # carpeta de la app (donde vive tools/analizar.py)
+PY = os.environ.get("MARATON_PYTHON") or sys.executable
 
 
 def _hermes() -> str | None:
@@ -67,9 +70,29 @@ class Manejador(BaseHTTPRequestHandler):
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Max-Age", "600")
         self.end_headers()
+
+    def do_GET(self):
+        # La app pregunta por su feedback: GET /feedback/<secreto>/<atleta>
+        ruta = self.path.split("?")[0].rstrip("/")
+        partes = [p for p in ruta.split("/") if p]
+        if len(partes) >= 4 and partes[0] == "maraton":
+            partes = partes[1:]
+        if len(partes) < 3 or partes[0] != "feedback":
+            return self._responder(404, {"ok": False, "error": "ruta desconocida"})
+        if SECRETO and partes[1] != SECRETO:
+            return self._responder(403, {"ok": False, "error": "secreto invalido"})
+        atleta = partes[2].lower()
+        archivo = CACHE / f"feedback_{atleta}.json"
+        if not archivo.exists():
+            return self._responder(200, {"ok": False, "pendiente": True,
+                                         "error": "todavia no hay analisis para " + atleta})
+        try:
+            return self._responder(200, json.loads(archivo.read_text(encoding="utf-8")))
+        except Exception:
+            return self._responder(500, {"ok": False, "error": "feedback ilegible"})
 
     def do_POST(self):
         # Detras de tailscale serve el prefijo /maraton se conserva: se acepta con o sin el.
@@ -116,9 +139,57 @@ class Manejador(BaseHTTPRequestHandler):
             # El aviso al agente puede tardar (hermes send tarda hasta 2 min): va aparte
             # para contestarle a la app de inmediato. Si no, el celular se queda esperando
             # y termina marcando "no llego" aunque si entro.
+            # El feedback se calcula aqui, no esperando al agente: la app tiene que
+            # contestar en segundos aunque el modelo este ocupado o sin saldo.
+            threading.Thread(target=analizar, args=(atleta, datos), daemon=True).start()
             hilo = threading.Thread(target=avisar_al_agente, args=(texto[:900],), daemon=True)
             hilo.start()
         return self._responder(200, {"ok": True, "atleta": atleta})
+
+
+def analizar(atleta: str, datos: dict) -> bool:
+    """Corre tools/analizar.py con lo que mando la app y deja el resultado en feedback_<atleta>.json."""
+    perfil = datos.get("perfil") or {}
+    plan = datos.get("plan") or {}
+    semanas = plan.get("semanas") or []
+    if not semanas:
+        return False
+    export = {"api": "plan-maraton/v1", "exportado": time.strftime("%Y-%m-%dT%H:%M:%S"),
+              "atleta": {"id": atleta, "nombre": perfil.get("nombre") or atleta,
+                         "fcmax": perfil.get("fcmax"), "fc_reposo": perfil.get("fc_reposo"),
+                         "carrera": perfil.get("carrera"), "meta": perfil.get("meta"),
+                         "zonas": perfil.get("zonas"), "inicio": plan.get("inicio")},
+              "inicio": plan.get("inicio"), "semanas": semanas,
+              "registro": datos.get("sesiones") or []}
+    fuente = CACHE / f"export_{atleta}.json"
+    fuente.write_text(json.dumps(export, ensure_ascii=False), encoding="utf-8")
+    try:
+        r = subprocess.run([PY, str(APP / "tools" / "analizar.py"), str(fuente),
+                            "--atleta", atleta, "--json"],
+                           capture_output=True, text=True, timeout=120)
+    except Exception as fallo:
+        print("analisis fallo:", fallo, flush=True)
+        return False
+    if r.returncode != 0:
+        print("analisis fallo:", (r.stderr or "")[-300:], flush=True)
+        return False
+    try:
+        dato = json.loads(r.stdout.strip().splitlines()[-1])
+    except Exception as fallo:
+        print("analisis sin json:", fallo, flush=True)
+        return False
+    if isinstance(dato, list):
+        dato = dato[0] if dato else {}
+    salida = {"ok": True, "cuando": time.strftime("%Y-%m-%dT%H:%M:%S"), "atleta": atleta,
+              "semana": dato.get("semana"), "fechas": dato.get("fechas"),
+              "plan": dato.get("plan"), "km": dato.get("km"), "pct": dato.get("pct"),
+              "faltan": dato.get("faltan"), "banderas": dato.get("banderas"),
+              "decision": dato.get("decision"), "siguiente": dato.get("siguiente"),
+              "cambios": dato.get("cambios"), "texto": dato.get("texto")}
+    (CACHE / f"feedback_{atleta}.json").write_text(json.dumps(salida, ensure_ascii=False, indent=1),
+                                                   encoding="utf-8")
+    print("feedback listo:", atleta, "semana", salida.get("semana"), flush=True)
+    return True
 
 
 def guardar_respaldo(atleta, datos):

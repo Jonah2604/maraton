@@ -95,9 +95,11 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
         k = float(r.get("km") or 0)
         return float(r.get("min") or 0) / k if k else None
 
+    # Caminar tambien cubre el dia: el plan mismo manda caminar cuando no se puede correr.
+    # Por eso la sesion cuenta para su tipo y solo se deja dicho que no dio el estimulo.
     dudosas = [r for r in esta
                if LIM.get(r.get("tipo")) and ritmo_min(r) and ritmo_min(r) > LIM[r.get("tipo")]]
-    tipos = {r.get("tipo") for r in esta if r not in dudosas}
+    tipos = {r.get("tipo") for r in esta}
     faltan = [t for t in ("calidad", "larga") if t not in tipos]
     techo = TECHOS.get(aid, 140)
 
@@ -153,9 +155,10 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
         if decision == "seguir":
             decision = "repetir"
     for r in dudosas:
-        banderas.append(f"la del {r.get('fecha')} marcada como {r.get('tipo')} fue caminata "
+        banderas.append(f"la del {r.get('fecha')} ({r.get('tipo')}) fue caminando "
                         f"({ritmo(float(r.get('min') or 0), float(r.get('km') or 0))}/km, "
-                        f"FC {r.get('fc_media') or '—'}): no cuenta como {r.get('tipo')} de la semana")
+                        f"FC {r.get('fc_media') or '—'}): cubre el dia, pero no dio el estimulo — "
+                        f"cuando puedas, trota los minutos fuertes")
     if esf_max >= 9:
         banderas.append(f"esfuerzo {esf_max}/10 reportado")
 
@@ -272,6 +275,14 @@ def main():
     reporte = "\n".join(salida)
     destino = APP / "tools" / "ultimo_analisis.md"
     destino.write_text(reporte, encoding="utf-8")
+    if "--json" in sys.argv:
+        # La app pinta esto dentro de su pantalla: datos, no prosa de consola.
+        dato = outs[0] if len(outs) == 1 else outs
+        for r in (outs if isinstance(dato, list) else [dato]):
+            r.pop("_filas", None)
+            r["texto"] = texto(r).strip()
+        print(json.dumps(dato, ensure_ascii=False, default=str))
+        return
     print(reporte)
     print(f"(reporte en {destino})")
     if "--aplicar" in sys.argv:

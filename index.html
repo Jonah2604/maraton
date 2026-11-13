@@ -268,6 +268,12 @@
       <div class="peq" id="fTxt" style="margin-top:8px"></div>
       <div id="fAvisos"></div>
     </div>
+    <div class="card" id="cFb">
+      <div class="fila"><h2 style="margin:0">Lo que dice el coach</h2>
+        <button class="bt mini" id="bFb">↻ Pedir análisis</button></div>
+      <div class="peq" id="fbCuado" style="margin-top:6px"></div>
+      <div id="fbTexto" style="margin-top:8px"></div>
+    </div>
     <div class="card">
       <h2>Resumen</h2>
       <div class="chips" id="rResumen"></div>
@@ -712,6 +718,47 @@
     $('#fAvisos').innerHTML = av.map(function (t) { return '<div class="peq">• ' + esc(t) + '</div>'; }).join('');
   }
 
+  // El analisis que contesta la PC. Se pinta aqui y no se manda al chat: el corredor
+  // no tiene por que salir de la app para saber como va.
+  function pintarFeedbackCoach(j) {
+    var caja = $('#fbTexto'), cuando = $('#fbCuado');
+    if (!j) { caja.innerHTML = ''; cuando.textContent = ''; return; }
+    if (j.pendiente) {
+      cuando.textContent = 'Todavía sin análisis: registra una sesión y se calcula solo.';
+      caja.innerHTML = '';
+      return;
+    }
+    if (!j.ok) {
+      cuando.textContent = j.error || 'No se pudo leer el análisis.';
+      caja.innerHTML = '';
+      return;
+    }
+    cuando.textContent = 'Actualizado ' + (j.cuando || '').replace('T', ' ').slice(0, 16) +
+                         (j.semana ? ' · semana ' + j.semana : '');
+    var out = [];
+    if (j.plan) out.push('<div class="peq"><b>Plan:</b> ' + esc(String(j.plan.km)) + ' km, larga ' +
+      esc(String(j.plan.larga)) + ' km · ' + esc(String(j.plan.calidad || '')) + '</div>');
+    out.push('<div class="peq"><b>Hecho:</b> ' + esc(String(j.km)) + ' km (' + esc(String(j.pct)) +
+             '% del plan)' + (j.faltan && j.faltan.length ? ' · falta ' + esc(j.faltan.join(', ')) : '') + '</div>');
+    (j.banderas || []).forEach(function (b) { out.push('<div class="peq">• ' + esc(b) + '</div>'); });
+    if (j.siguiente) out.push('<div class="peq">Siguiente: semana ' + esc(String(j.siguiente)) +
+      (j.cambios && j.cambios.km ? ' · ' + esc(String(j.cambios.km)) + ' km, larga ' + esc(String(j.cambios.larga)) : '') + '</div>');
+    caja.innerHTML = out.join('');
+  }
+
+  function pedirFeedback() {
+    var btn = $('#bFb');
+    if (btn) { btn.disabled = true; btn.textContent = 'Calculando…'; }
+    var listo = function (j) {
+      pintarFeedbackCoach(j);
+      if (btn) { btn.disabled = false; btn.textContent = '↻ Pedir análisis'; }
+    };
+    try {
+      var p = A.feedback(atleta);
+      if (p && p.then) p.then(listo); else listo({ ok: false, error: 'sin respuesta' });
+    } catch (x) { listo({ ok: false, error: 'no se pudo pedir' }); }
+  }
+
   function pintarReg() {
     var d = A.leer(atleta), reg = d.registro.slice().reverse();
     pintarFeedback();
@@ -929,6 +976,7 @@
 
   function pintarTodo() {
     pintarAtletas(); pintarHoy(); pintarPlan(); pintarReg(); pintarAgente();
+    if ($('#fbTexto')) pintarFeedbackCoach(A.feedbackGuardado(atleta));
     if ($('#ntGuardar')) $('#ntGuardar').onclick = guardarNotaUI;
     if ($('#bManual')) $('#bManual').onclick = function () { abrirRegistro('facil'); };
     Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) {
@@ -1021,6 +1069,8 @@
   };
   $('#fFcm').oninput = zonaEnVivo;
   $('#bNueva').onclick = function () { abrirRegistro('facil'); };
+  // El boton pinta lo que la PC ya calculo; si aun no hay nada, lo pide.
+  $('#bFb').onclick = pedirFeedback;
 
   $('#bGuardar').onclick = function () {
     var r = A.registrar(atleta, {
@@ -1041,7 +1091,7 @@
       : 'Guardado ✅';
     $('#fAviso').className = 'aviso ok';
     pintarTodo();
-    setTimeout(function () { cerrarRegistro(); vista = 'Reg'; pintarTodo(); }, 1400);
+    setTimeout(function () { cerrarRegistro(); vista = 'Reg'; pintarTodo(); pedirFeedback(); }, 1400);
   };
 
   Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) {
