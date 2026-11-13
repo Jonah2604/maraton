@@ -1,4 +1,4 @@
-# Have a Coach · plan de entrenamiento
+# JabaAcoach · plan de entrenamiento
 
 App de bolsillo (PWA) para seguir un plan de maratón por **frecuencia cardíaca**.
 Funciona sin cuenta y sin servidor: todo vive en el teléfono.
