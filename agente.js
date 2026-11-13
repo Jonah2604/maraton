@@ -815,7 +815,7 @@ function rellenar(plan, inicio) {
       }
       e.perfiles[id] = p;
       if (!guardar(e)) return { ok: false, error: 'no se pudo guardar' };
-      avisar();
+      avisar(id);
       var a = atleta(id);
       return { ok: true, perfil: p, zonas: a.zonas, fcmax: a.fcmax };
     },
@@ -931,7 +931,7 @@ function rellenar(plan, inicio) {
       };
       e.registro[id].push(fila);
       if (!guardar(e)) return { ok: false, error: 'no se pudo guardar (almacen lleno o bloqueado)' };
-      avisar();
+      avisar(id);
       return { ok: true, sesion: fila, total: e.registro[id].length };
     },
 
@@ -941,7 +941,7 @@ function rellenar(plan, inicio) {
       var e = cargar(), antes = e.registro[id].length;
       e.registro[id] = e.registro[id].filter(function (r) { return !(r.fecha === fecha && r.tipo === tipo); });
       if (e.registro[id].length === antes) return { ok: false, error: 'no existe esa sesion' };
-      guardar(e); avisar();
+      guardar(e); avisar(id);
       return { ok: true, quedan: e.registro[id].length };
     },
 
@@ -963,7 +963,7 @@ function rellenar(plan, inicio) {
       };
       e.notas[id].push(reg);
       if (e.notas[id].length > 60) e.notas[id] = e.notas[id].slice(-60);
-      guardar(e); avisar();
+      guardar(e); avisar(id);
       // lo que la app deduce sola, para que el coach no tenga que adivinarlo
       var r = { ok: true, nota: reg, leida: inf };
       if (reg.quiere_mas_dias) {
@@ -995,7 +995,7 @@ function rellenar(plan, inicio) {
       if (!e.notas || !e.notas[id]) return { ok: false, error: 'sin notas' };
       var n0 = e.notas[id].length;
       e.notas[id] = e.notas[id].filter(function (x) { return x.fecha !== fecha; });
-      guardar(e); avisar();
+      guardar(e); avisar(id);
       return { ok: n0 !== e.notas[id].length, quedan: e.notas[id].length };
     },
 
@@ -1020,7 +1020,7 @@ function rellenar(plan, inicio) {
         }
       });
       e.ajustes[id].push(cambio);
-      guardar(e); avisar();
+      guardar(e); avisar(id);
       return { ok: true, ajuste: cambio, fila: filaSemana(id, n) };
     },
 
@@ -1077,7 +1077,8 @@ function rellenar(plan, inicio) {
     },
 
     // Aviso al agente externo. Nunca bloquea ni rompe: si el endpoint esta caido, la app sigue.
-    avisar: function () { avisar(); return { ok: true }; },
+    // Manda SOLO el atleta que cambio (no todo el archivo) para que el agente sepa a quien reaccionar.
+    avisar: function (id) { avisar(id); return { ok: true }; },
 
     // Aplica un #agent=<json> si viene en la URL. Devuelve que hizo, para poder probarlo.
     aplicarHash: function () {
@@ -1341,15 +1342,21 @@ function rellenar(plan, inicio) {
     },
   };
 
-  function avisar() {
+  function avisar(id) {
     var e = cargar();
     if (!e.webhook) return;
     try {
-      var cuerpo = JSON.stringify({ api: VERSION, cuando: new Date().toISOString(),
-        registro: e.registro, ajustes: e.ajustes });
+      var quien = (id && e.registro[id]) ? id : null;
+      var cuerpo = { api: VERSION, cuando: new Date().toISOString(),
+        atleta: quien, registro: e.registro, ajustes: e.ajustes };
+      if (quien) {
+        cuerpo.sesiones = e.registro[quien].slice();
+        cuerpo.perfil = e.perfiles[quien] || null;
+      }
+      var txt = JSON.stringify(cuerpo);
       if (typeof fetch === 'function') {
         fetch(e.webhook, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                           body: cuerpo, mode: 'no-cors', keepalive: true })
+                           body: txt, mode: 'no-cors', keepalive: true })
           .catch(function () { /* si el agente esta caido, la app sigue igual */ });
       }
     } catch (x) {}
