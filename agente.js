@@ -738,6 +738,41 @@ function rellenar(plan, inicio) {
       return { ok: true, fcmax: a.fcmax, fc_reposo: a.fc_reposo, modo: a.zonas.__modo || 'pct', zonas: a.zonas };
     },
 
+    // Fuerza paso a paso: lo que la ficha resume en una linea y aqui se explica.
+    // Dos sesiones alternas (A piernas, B estabilidad y core) y el aviso de cuando no se hace.
+    fuerzaPlan: function (dia) {
+      var d = num(dia) ? 'A' : (String(dia || '').toUpperCase() === 'B' ? 'B' : 'A');
+      var A = [
+        ['Sentadilla', '3x8-10', 'Pies al ancho de hombros, espalda recta, baja hasta que el muslo quede paralelo al piso. Rodilla en línea con el pie, no hacia dentro. Peso: mancuerna al pecho o solo el cuerpo.'],
+        ['Peso muerto rumano', '3x8', 'Piernas casi rectas, cadera atrás, la barra o mancuernas rozan el muslo. Sientes el estirón en el corva, no en la espalda baja.'],
+        ['Zancada', '2x10 por pierna', 'Paso largo, rodilla de atrás baja al piso sin tocar. Torso erguido; si se va hacia adelante, el paso es corto.'],
+        ['Puente de glúteo', '3x12', 'Tumbado, talones cerca del glúteo, sube la cadera hasta una línea recta hombro-cadera-rodilla. Aprieta el glúteo arriba, no arquear la espalda.'],
+        ['Subida al cajón', '2x8 por pierna', 'Cajón o escalón fijo a la altura de la rodilla. Sube empujando con la pierna de arriba; baja controlado, sin dejarse caer.'],
+        ['Elevación de talón', '3x15', 'De pie en el borde de un escalón, sube los talones despacio, aguanta 1 s arriba, baja hasta sentir el estirón.']
+      ];
+      var B = [
+        ['Plancha frontal', '3x30-45 s', 'Codos bajo los hombros, cuerpo en línea recta, glúteo y abdomen apretados. Si se hunde la cadera, se corta el tiempo: cuenta la forma, no el reloj.'],
+        ['Plancha lateral', '2x20-30 s por lado', 'De costado sobre el antebrazo, cadera arriba. Si se cae la cadera, baja a rodillas apoyadas.'],
+        ['Pájaro-perro', '2x10 por lado', 'Cuatro puntos, extiende brazo y pierna contrarios sin arquear la espalda. Lento; el punto es no moverse del eje.'],
+        ['Trabajo en un pie', '2x30 s por lado', 'De pie, un pie en el aire, mirada al frente; si es fácil, con ojos cerrados. Es lo que protege el tobillo en las cuestas.'],
+        ['Movilidad de tobillo', '2x10 por lado', 'Rodilla hacia la pared con el talón pegado al piso; la distancia al muro marca tu movilidad real.'],
+        ['Movilidad de cadera', '2x8 por lado', 'Zancada con rodilla en el piso, empuja la cadera hacia adelante y aguanta 5 s sin girar la pelvis.']
+      ];
+      var e = d === 'A' ? A : B;
+      return {
+        ok: true, dia: d,
+        titulo: d === 'A' ? 'Fuerza A · piernas y cadera' : 'Fuerza B · estabilidad y core',
+        resumen: d === 'A' ? '20-30 min después de correr, nunca antes' : '15-20 min después de correr, nunca antes',
+        reglas: [
+          'Va AL FINAL de una salida, no como día aparte.',
+          'Nunca el día antes de la tirada larga ni en la semana de la carrera (ahí baja a una sesión suave).',
+          'Empieza con peso que te deje 2-3 repeticiones en reserva; sube la carga antes que las repeticiones.',
+          'Dolor que irradia, pinchazo o que despierta de noche: se suspende y se consulta, no se aguanta.'
+        ],
+        ejercicios: e.map(function (x) { return { nombre: x[0], dosis: x[1], como: x[2] }; })
+      };
+    },
+
     // Personaliza el lugar 1 o 2 para otra persona (el caso "le paso la app a mi hermano").
     // Cambiar la FC maxima recalcula las cinco zonas; cambiar el nombre no toca nada mas.
     perfil: function (id, campos) {

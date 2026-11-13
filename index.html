@@ -375,6 +375,8 @@
     <div class="chips" id="dChips" style="margin-top:8px"></div>
     <p class="peq" id="dResumen" style="margin:8px 0 2px"></p>
     <div id="dPasos"></div>
+    <button class="bt mini" style="width:100%;margin-top:10px" id="dFuerza">Ver los ejercicios de fuerza, paso a paso</button>
+    <div id="dFuerzaDet" style="display:none"></div>
     <div id="dAvisos" style="margin-top:6px"></div>
     <button class="bt pri" style="width:100%;margin-top:12px" id="dHacer">Anotar esta sesión</button>
   </div>
@@ -955,9 +957,28 @@
       return '<div class="peq">• ' + esc(t) + '</div>';
     }).join('');
     $('#dHacer').textContent = r.hecha ? 'Anotar otra vez' : 'Anotar esta sesión';
+    $('#dFuerzaDet').style.display = 'none';
+    $('#dFuerzaDet').innerHTML = '';
+    $('#dFuerza').textContent = 'Ver los ejercicios de fuerza, paso a paso';
     $('#ficha').classList.add('abierta');
   }
   function cerrarFicha() { $('#ficha').classList.remove('abierta'); }
+
+  // Fuerza: la ficha lo resume en una linea; aqui se despliega el paso a paso.
+  function verFuerza() {
+    var det = $('#dFuerzaDet');
+    if (det.style.display !== 'none') { det.style.display = 'none'; $('#dFuerza').textContent = 'Ver los ejercicios de fuerza, paso a paso'; return; }
+    var r = A.fuerzaPlan('A');
+    det.innerHTML = '<div class="paso"><div class="k">' + esc(r.titulo) + '</div>' +
+      '<div class="v">' + esc(r.resumen) + '</div></div>' +
+      r.reglas.map(function (t) { return '<div class="peq">• ' + esc(t) + '</div>'; }).join('') +
+      r.ejercicios.map(function (e) {
+        return '<div class="paso"><div class="k">' + esc(e.nombre) + ' · ' + esc(e.dosis) + '</div>' +
+          '<div class="v">' + esc(e.como) + '</div></div>';
+      }).join('');
+    det.style.display = 'block';
+    $('#dFuerza').textContent = 'Ocultar los ejercicios';
+  }
 
   function zonaEnVivo() {
     var v = $('#fFcm').value;
@@ -971,6 +992,7 @@
   $('#bCerrar').onclick = cerrarRegistro;
   $('#hoja').onclick = function (e) { if (e.target === $('#hoja')) cerrarRegistro(); };
   $('#dCerrar').onclick = cerrarFicha;
+  $('#dFuerza').onclick = verFuerza;
   $('#ficha').onclick = function (e) { if (e.target === $('#ficha')) cerrarFicha(); };
   $('#dHacer').onclick = function () {
     var t = fichaActual ? fichaActual.tipo : 'facil';
