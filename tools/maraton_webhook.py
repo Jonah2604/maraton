@@ -69,8 +69,11 @@ class Manejador(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        # Detras de tailscale serve el prefijo /maraton se conserva: se acepta con o sin el.
         ruta = self.path.split("?")[0].rstrip("/")
         partes = [p for p in ruta.split("/") if p]
+        if len(partes) >= 3 and partes[0] == "maraton":
+            partes = partes[1:]
         if len(partes) < 2 or partes[0] != "hook":
             return self._responder(404, {"ok": False, "error": "ruta desconocida"})
         if SECRETO and partes[1] != SECRETO:
