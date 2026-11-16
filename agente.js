@@ -1030,11 +1030,18 @@ function rellenar(plan, inicio) {
       var pendientes = ['calidad', 'facil', 'larga'].filter(function (t) { return !hechas[t]; });
       var techo = a.zonas && a.zonas.Z2 ? a.zonas.Z2[1] : null;
       var kmHechos = suma(esta, 'km'), pct = f && f.km ? Math.round(kmHechos / f.km * 100) : null;
+      // El aviso cambia con el dia: el lunes decir "faltan" hace creer que la semana
+      // ya se cerro incompleta, cuando apenas empieza.
+      var dia = new Date(fecha + 'T12:00:00').getDay();   // 0 dom, 1 lun ... 6 sab
+      var temprana = dia >= 1 && dia <= 3;
+      var pendientesTexto = !pendientes.length ? null
+        : (temprana ? 'esta semana toca: ' + pendientes.join(', ')
+                    : 'faltan: ' + pendientes.join(', '));
       var avisos = [];
       if (f) {
         if (kmHechos > f.km * 1.15) avisos.push('la semana va por ' + kmHechos.toFixed(1) + ' km contra ' + f.km + ' del plan: si te sientes cargado, baja la siguiente');
         else if (pct != null && esta.length >= 2 && pct < 50 && pendientes.length === 0) avisos.push('quedaste corto: ' + kmHechos.toFixed(1) + ' de ' + f.km + ' km, la siguiente no se sube');
-        if (pendientes.length) avisos.push('faltan: ' + pendientes.join(', ') + ' (si el dia ya paso, se camina o se mueve, no se pega al siguiente)');
+        if (pendientesTexto) avisos.push(pendientesTexto + ' (si el dia ya paso, se camina o se mueve, no se pega al siguiente)');
       }
       dudosas.forEach(function (r) {
         avisos.push('la del ' + r.fecha + ' marcada como ' + r.tipo + ' fue caminata (' +
@@ -1048,7 +1055,7 @@ function rellenar(plan, inicio) {
       if (delta != null && delta <= -15 && esta.length >= 2) avisos.push('vas ' + Math.abs(delta) + ' s/km mas rapido que la semana pasada con ' + esta.length + ' sesiones: bien, pero sin subir km a la vez');
       return { ok: true, semana: n, fila: f, esta: esta, previa: prev, kmHechos: kmHechos, kmPrevios: suma(prev, 'km'),
         horasHechas: Math.round(suma(esta, 'min') / 6) / 10, horasPrevias: Math.round(suma(prev, 'min') / 6) / 10,
-        pct: pct, ritmo: rEsta, ritmoPrev: rPrev, deltaSeg: delta, pendientes: pendientes, avisos: avisos,
+        pct: pct, ritmo: rEsta, ritmoPrev: rPrev, deltaSeg: delta, pendientes: pendientes, pendientesTexto: pendientesTexto, avisos: avisos,
         total: a.semanas.length,
         dudosas: dudosas.map(function (r) { return { fecha: r.fecha, tipo: r.tipo, ritmo: r.ritmo }; }),
         proxima: filaSemana(id, Math.min(a.semanas.length, n + 1)) };
