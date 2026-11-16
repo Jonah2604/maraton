@@ -790,7 +790,7 @@
           (r.zona ? ' · ' + esc(r.zona) : '') +
           ' <button class="bt mini" data-del="' + esc(r.fecha) + '|' + esc(r.tipo) + '">✕</button></div>' +
           '<div class="d">' +
-            (r.km != null ? r.km + ' km · ' : '') +
+            (r.km != null ? Math.round(Number(r.km) * 100) / 100 + ' km · ' : '') +
             (r.min != null ? r.min + ' min · ' : '') +
             (r.fc_media != null ? 'FC ' + r.fc_media + (r.fc_max != null ? '/' + r.fc_max : '') + ' · ' : '') +
             (r.esf != null ? 'esf ' + r.esf : '') +

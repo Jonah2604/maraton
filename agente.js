@@ -1034,14 +1034,16 @@ function rellenar(plan, inicio) {
       // ya se cerro incompleta, cuando apenas empieza.
       var dia = new Date(fecha + 'T12:00:00').getDay();   // 0 dom, 1 lun ... 6 sab
       var temprana = dia >= 1 && dia <= 3;
+      var NOMBRE = { calidad: 'calidad', facil: 'fácil', larga: 'larga' };
+      var lista = pendientes.map(function (t) { return NOMBRE[t] || t; }).join(', ');
       var pendientesTexto = !pendientes.length ? null
-        : (temprana ? 'esta semana toca: ' + pendientes.join(', ')
-                    : 'faltan: ' + pendientes.join(', '));
+        : (temprana ? 'esta semana toca: ' + lista
+                    : 'faltan: ' + lista);
       var avisos = [];
       if (f) {
         if (kmHechos > f.km * 1.15) avisos.push('la semana va por ' + kmHechos.toFixed(1) + ' km contra ' + f.km + ' del plan: si te sientes cargado, baja la siguiente');
         else if (pct != null && esta.length >= 2 && pct < 50 && pendientes.length === 0) avisos.push('quedaste corto: ' + kmHechos.toFixed(1) + ' de ' + f.km + ' km, la siguiente no se sube');
-        if (pendientesTexto) avisos.push(pendientesTexto + ' (si el dia ya paso, se camina o se mueve, no se pega al siguiente)');
+        if (pendientesTexto) avisos.push(pendientesTexto + ' (si el día ya pasó, se camina o se mueve, no se pega al siguiente)');
       }
       dudosas.forEach(function (r) {
         avisos.push('la del ' + r.fecha + ' marcada como ' + r.tipo + ' fue caminata (' +
