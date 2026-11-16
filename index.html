@@ -728,9 +728,11 @@
     else lineas.push('Sin sesiones la semana pasada: esta es la primera referencia.');
     $('#fTxt').textContent = lineas.join(' ');
     var av = b.avisos.slice();
-    av.push(b.pendientes.length ? (b.pendientesTexto ? b.pendientesTexto.charAt(0).toUpperCase() + b.pendientesTexto.slice(1) + '.' : 'Pendiente: ' + b.pendientes.join(', ') + '.')
+    var lineaTipos = b.pendientes.length
+      ? (b.pendientesTexto ? null : 'Pendiente: ' + b.pendientes.join(', ') + '.')
       : (b.dudosas && b.dudosas.length ? 'Los tipos están cubiertos, pero revisa la sesión dudosa de arriba.'
-                                        : 'Las tres de la semana están hechas.'));
+                                        : 'Las tres de la semana están hechas.');
+    if (lineaTipos) av.push(lineaTipos);
     if (b.proxima) av.push('Siguiente (' + b.proxima.fechas + '): ' + b.proxima.km + ' km, larga de ' + b.proxima.larga + ' km.');
     $('#fAvisos').innerHTML = av.map(function (t) { return '<div class="peq">• ' + esc(t) + '</div>'; }).join('');
   }
