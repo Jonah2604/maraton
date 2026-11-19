@@ -429,7 +429,8 @@
     <div class="fila"><b style="font-size:16px">Corredor nuevo</b>
       <button class="bt mini" id="nuCerrar">Cerrar</button></div>
     <p class="peq" style="margin:8px 0 0">Su plan no se copia del de otro: se arma con su meta y con lo que
-      aguanta hoy. Lo que falte se pregunta, no se inventa.</p>
+      aguanta hoy. Lo que falte se pregunta, no se inventa. Todo esto lo llena quien la va a usar: aquí no hay
+      nombres de nadie más.</p>
     <div style="margin-top:12px"><label>Nombre</label><input id="nuNombre" maxlength="40" placeholder="Cómo se llama"></div>
     <div class="dos">
       <div><label>Meta</label>
@@ -482,7 +483,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v46';
+  var APP_V = 'v47';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
@@ -519,6 +520,20 @@
     return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : '';
   }
 
+  // Si la app viene en blanco (nadie la ha usado en este telefono), no se inventa un corredor de ejemplo:
+  // se abre el formulario y se pregunta lo minimo. Los lugares de la plantilla no se pintan vacios.
+  function vieneEnBlanco() {
+    var c = A.corredores();
+    var suyos = (c.corredores || []).filter(function (a) { return !a.plantilla; });
+    return suyos.length === 0;
+  }
+
+  function abrirAlta() {
+    verPlanNuevo();          // deja la hoja lista y la abre; el alta la vuelve a cerrar al guardar
+    var n = $('#nuNombre');
+    if (n) setTimeout(function () { n.focus(); }, 150);
+  }
+
   // ---------------------------------------------------------------- atletas
   // La barra muestra uno o dos lugares segun el ajuste; el nombre sale del perfil guardado.
   // Un solo lugar en la barra: cada quien ve lo suyo y cambia con el boton de al lado.
@@ -526,7 +541,8 @@
 
   function pintarAtletas() {
     var todos = A.corredores().corredores;
-    var lista = todos;
+    // En blanco no se pinta un lugar de la plantilla: no habria nombre ni plan que mostrar.
+    var lista = todos.filter(function (a) { return !a.plantilla || !vieneEnBlanco(); });
     if (!dosAtletas) {
       var solo = lista.filter(function (a) { return a.id === atleta; });
       lista = solo.length ? solo : lista.slice(0, 1);
@@ -1118,6 +1134,7 @@
   }
 
   function pintarTodo() {
+    if (vieneEnBlanco()) { pintarEnBlanco(); return; }
     pintarAtletas(); pintarHoy(); pintarPlan(); pintarReg(); pintarAgente();
     if ($('#fbTexto')) pintarFeedbackCoach(A.feedbackGuardado(atleta));
     if ($('#ntGuardar')) $('#ntGuardar').onclick = guardarNotaUI;
@@ -1127,6 +1144,25 @@
     });
     ['Hoy','Plan','Reg','Agente'].forEach(function (v) {
       $('#v' + v).classList.toggle('oculto', v !== vista);
+    });
+  }
+
+  // La primera vez que alguien abre la app no hay plan, ni nombre, ni historial: se pide lo minimo
+  // y se avisa que ese plan lo arma la app en el telefono. Nada de datos de otra persona.
+  function pintarEnBlanco() {
+    $('#atletas').innerHTML = '';
+    $('#vHoy').innerHTML = '<div class="card">' +
+      '<h3 style="margin:0 0 6px">Empecemos por ti</h3>' +
+      '<p class="peq" style="margin:0 0 10px">Esta app no trae a nadie dentro: ni nombres, ni planes, ni historial. ' +
+      'Tu plan se arma aquí con tu meta y con lo que aguantas hoy.</p>' +
+      '<button class="bt" id="bEmpezar">Poner mis datos</button></div>';
+    ['Plan', 'Reg', 'Agente'].forEach(function (v) { $('#v' + v).innerHTML = ''; });
+    $('#bEmpezar').onclick = abrirAlta;
+    Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) {
+      b.classList.toggle('on', b.dataset.v === 'Hoy');
+    });
+    ['Hoy','Plan','Reg','Agente'].forEach(function (v) {
+      $('#v' + v).classList.toggle('oculto', v !== 'Hoy');
     });
   }
 

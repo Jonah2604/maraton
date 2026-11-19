@@ -1048,7 +1048,7 @@ function rellenar(plan, inicio) {
         if (e.salida && e.salida[k] === false) continue;   // se quito de la barra a proposito
         var a = atleta(k);
         out.push({ id: k, nombre: a.nombre, fcmax: a.fcmax, fc_reposo: a.fc_reposo, zonas: a.zonas,
-                   carrera: a.carrera, meta: a.meta, base: true, registros: e.registro[k].length,
+                   carrera: a.carrera, meta: a.meta, base: true, plantilla: true, registros: e.registro[k].length,
                    semanas: a.semanas.length, oculto: false });
       }
       for (k in e.planes) if (e.planes.hasOwnProperty(k)) {
@@ -1057,7 +1057,7 @@ function rellenar(plan, inicio) {
         if (PLANES_BASE.atletas.hasOwnProperty(k)) continue;
         var b = atleta(k);
         out.push({ id: k, nombre: b.nombre || k, fcmax: b.fcmax || null, fc_reposo: b.fc_reposo, zonas: b.zonas,
-                   carrera: b.carrera, meta: b.meta, base: false, registros: e.registro[k].length,
+                   carrera: b.carrera, meta: b.meta, base: false, plantilla: false, registros: e.registro[k].length,
                    semanas: b.semanas.length, oculto: false });
       }
       return { ok: true, corredores: out, salida: e.salida };
