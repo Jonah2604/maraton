@@ -481,7 +481,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v39';
+  var APP_V = 'v40';
 (function () {
   'use strict';
   var A = window.Agente;
@@ -1684,23 +1684,27 @@
   }
   // #r=<direccion del receptor>: deja configurado el telefono sin teclear la direccion a mano.
   // Va en el hash, que no se manda al servidor, y se borra en cuanto se guarda.
-  (function () {
+  // Se aplica al cargar y tambien si el enlace llega con la app ya abierta (hashchange).
+  function aplicarEnlace() {
     var m = /[#&]r=([^&]+)/.exec(location.hash || '');
     if (!m) return;
     var url = '';
     try { url = decodeURIComponent(m[1]); } catch (e) { url = m[1]; }
     var r = A.webhook(url);
-    if (r && r.ok) {
-      // &a=<atleta>: deja tambien elegido el corredor, para que el enlace sirva en un telefono nuevo.
-      var ma = /[#&]a=([A-Za-z0-9_\-]{2,20})/.exec(location.hash || '');
-      if (ma) {
-        var id = ma[1];
-        var hay = A.corredores().corredores.some(function (c) { return c.id === id; });
-        if (hay) { atleta = id; guardarUI(); }
-      }
-      try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+    if (!r || !r.ok) return;
+    // &a=<atleta>: deja tambien elegido el corredor, para que el enlace sirva en un telefono nuevo.
+    var ma = /[#&]a=([A-Za-z0-9_\-]{2,20})/.exec(location.hash || '');
+    if (ma) {
+      var id = ma[1];
+      var hay = A.corredores().corredores.some(function (c) { return c.id === id; });
+      if (hay) { atleta = id; guardarUI(); }
     }
-  })();
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+    pintarTodo();
+  }
+  aplicarEnlace();
+  window.addEventListener('hashchange', aplicarEnlace);
+
   pintarTodo();
 
   // El puente avisa cuando aplica un #agent=... y cuando algo cambia desde fuera.
