@@ -814,6 +814,137 @@ function rellenar(plan, inicio) {
              filas: filas, km: Math.round(total * 10) / 10 };
   }
 
+
+  /* ==================================================== plan con un modelo en la nube
+     Para quien abre esta app sin coach en casa: el plan lo ajusta un modelo al que la persona
+     le pone su cuenta y su llave. La app NO manda el nombre ni el historial completo: manda la
+     semana que corrio y el plan resumido. Y no le cree: lo que regrese se filtra con las mismas
+     reglas de `revisarSemana`, que son las que mandan.
+
+     Lo que esta funcion nunca hace: cambiar el plan guardado por su cuenta. Devuelve la propuesta
+     y quien la ve decide guardarla. */
+
+  var API_LLAVE = 'maraton.ia.llave';
+  var API_MODELO = 'maraton.ia.modelo';
+
+  function iaLlave(v) {
+    if (v === undefined) return leerLlave();
+    var k = String(v || '').trim();
+    try { k ? localStorage.setItem(API_LLAVE, k) : localStorage.removeItem(API_LLAVE); } catch (e) { }
+    return !!k;
+  }
+  function leerLlave() {
+    try { return localStorage.getItem(API_LLAVE) || ''; } catch (e) { return ''; }
+  }
+  function iaModelo(v) {
+    if (v === undefined) { try { return localStorage.getItem(API_MODELO) || ''; } catch (e) { return ''; } }
+    var m = String(v || '').trim();
+    try { m ? localStorage.setItem(API_MODELO, m) : localStorage.removeItem(API_MODELO); } catch (e) { }
+    return !!m;
+  }
+
+  // Lo que sale del telefono: lo justo para que el modelo entienda la semana. Sin nombre, sin correo.
+  function cargaParaModelo(id, n) {
+    var e = cargar(), a = atleta(id) || e.planes[id] || null;
+    if (!a || !a.semanas) return null;
+    var sem = null, sig = null;
+    a.semanas.forEach(function (s) {
+      if (s.n === n) sem = s;
+      if (s.n === n + 1) sig = s;
+    });
+    if (!sem) return null;
+    var reg = (e.registro[id] || []).filter(function (s) { return semanaDe(s.fecha, id) === n; })
+      .map(function (s) {
+        return { tipo: s.tipo, km: parseFloat(s.km) || 0, min: parseFloat(s.min) || 0,
+                 fc_media: s.fc_media || null, fc_max: s.fc_max || null,
+                 molestia: s.molestia || null };
+      });
+    return {
+      meta: { distancia_km: (a.semanas[a.semanas.length - 1] || {}).km || null, semanas_plan: a.semanas.length,
+              fcmax: a.fcmax || null, fc_reposo: a.fc_reposo || null, dias_por_semana: a.dias || 4 },
+      semana: n, plan_km: sem.km, larga: sem.larga,
+      filas: (sem.filas || []).map(function (f) { return { tipo: f.tipo, km: f.km, min: f.min }; }),
+      corrido: reg,
+      siguiente: sig ? { semana: sig.n, km: sig.km, larga: sig.larga, descarga: !!sig.descarga, carrera: !!sig.carrera,
+                         filas: (sig.filas || []).map(function (f) { return { tipo: f.tipo, km: f.km, min: f.min }; }) } : null,
+      reglas: ['no mas de 20 % arriba de la semana anterior', 'si el maximo paso del 90 % de la FC maxima, no sube',
+               'con molestia, se queda igual o baja y sin calidad', 'la semana de la carrera no se toca',
+               'la larga no pasa del tope de la distancia']
+    };
+  }
+
+  function promptDePlan(carga) {
+    return 'Eres entrenador de carrera. Con estos datos, di si la semana siguiente se queda igual, sube ' +
+      'o baja, y devuelve SOLO el JSON con las filas de esa semana: ' +
+      '{"semana":N,"km":X,"larga":Y,"filas":[{"tipo":"facil|calidad|larga|regenerativo|fuerza","km":X,"min":M}],"nota":"una frase"}. ' +
+      'La nota va dirigida al corredor, en segunda persona, sin prometer tiempos. Datos: ' + JSON.stringify(carga);
+  }
+
+  // Llama a un endpoint compatible con OpenAI (OpenAI, Groq, DeepSeek, un Ollama local...).
+  function pedirPlanIA(id, n, o) {
+    o = o || {};
+    var carga = cargaParaModelo(id, n);
+    if (!carga) return Promise.resolve({ ok: false, error: 'esa semana no esta en el plan' });
+    var llave = o.llave || leerLlave();
+    var url = String(o.url || 'https://api.openai.com/v1/chat/completions');
+    var modelo = o.modelo || iaModelo() || 'gpt-4o-mini';
+    if (!llave && !/127\.0\.0\.1|localhost/.test(url)) {
+      return Promise.resolve({ ok: false, error: 'falta la llave del modelo' });
+    }
+    var cuerpo = {
+      model: modelo, temperature: 0.2,
+      response_format: { type: 'json_object' },
+      messages: [{ role: 'user', content: promptDePlan(carga) }]
+    };
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + llave },
+      body: JSON.stringify(cuerpo)
+    }).then(function (r) {
+      if (!r.ok) return { ok: false, error: 'el modelo respondio ' + r.status };
+      return r.json();
+    }).then(function (j) {
+      if (!j || !j.ok) return j;
+      var txt = ((((j.choices || [])[0] || {}).message) || {}).content || '';
+      return filtrarPlanIA(txt, id, n);
+    }).catch(function (e) { return { ok: false, error: 'no se pudo preguntar al modelo' }; });
+  }
+
+  // Nada del modelo entra sin pasar por aqui. Si no cuadra, se descarta entero.
+  function filtrarPlanIA(respuesta, id, n) {
+    var j = respuesta;
+    if (typeof respuesta === 'string') {
+      var txt = respuesta.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+      try { j = JSON.parse(txt); } catch (e) { return { ok: false, error: 'el modelo no devolvio JSON' }; }
+    }
+    if (!j || typeof j !== 'object') return { ok: false, error: 'el modelo no devolvio JSON' };
+    var filas = j.filas || j.semanas && j.semanas[0] && j.semanas[0].filas;
+    if (!filas || !filas.length) return { ok: false, error: 'el modelo no devolvio sesiones' };
+    var a = atleta(id) || cargar().planes[id] || { semanas: [] }, sem = null;
+    (a.semanas || []).forEach(function (s) { if (s.n === n) sem = s; });
+    if (!sem) return { ok: false, error: 'esa semana no esta en el plan' };
+    var TIPOS_OK = ['facil', 'calidad', 'larga', 'regenerativo', 'fuerza', 'carrera', 'otro'];
+    var limpio = [], total = 0, largas = 0;
+    for (var i = 0; i < filas.length; i++) {
+      var f = filas[i] || {}, km = parseFloat(f.km), min = parseFloat(f.min);
+      if (!(km > 0) || km > 60 || !(min > 0) || min > 400) return { ok: false, error: 'el modelo devolvio km o minutos imposibles' };
+      var tipo = String(f.tipo || 'facil').toLowerCase();
+      if (TIPOS_OK.indexOf(tipo) < 0) tipo = 'facil';
+      if (tipo === 'larga') largas++;
+      limpio.push({ tipo: tipo, km: Math.round(km * 10) / 10, min: Math.round(min) });
+      total += km;
+    }
+    if (largas > 1) return { ok: false, error: 'el modelo puso mas de una tirada larga' };
+    // el tope de volumen es un numero, no una opinion: si lo pasa, no se usa
+    var tope = sem.km * 1.2;
+    if (total > tope + 0.05) return { ok: false, error: 'el modelo subio el volumen arriba del 20 %' };
+    if (total < sem.km * 0.4) return { ok: false, error: 'el modelo recorto la semana de mas' };
+    return { ok: true, semana: n, km: Math.round(total * 10) / 10,
+             larga: (function () { var l = 0; limpio.forEach(function (f) { if (f.tipo === 'larga') l = f.km; }); return l; })(),
+             filas: limpio, nota: String(j.nota || '').slice(0, 220), fuente: 'modelo' };
+  }
+
+
   /* ------------------------------------------------------------------- API */
   var Agente = {
 
@@ -980,6 +1111,12 @@ function rellenar(plan, inicio) {
     },
 
     revisarSemana: revisarSemana,
+    pedirPlanIA: pedirPlanIA,
+    // La carga que saldria al modelo, para poder revisarla sin llamar a nadie.
+    _carga: cargaParaModelo,
+    filtrarPlanIA: filtrarPlanIA,
+    iaLlave: iaLlave,
+    iaModelo: iaModelo,
     repartirSemana: repartirSemana,
 
     // Fuerza paso a paso: lo que la ficha resume en una linea y aqui se explica.

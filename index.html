@@ -482,7 +482,21 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v41';
+  var APP_V = 'v43';
+
+  /* ============================================================ plan sin coach
+     Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
+     un modelo del navegador (`Agente.planIASiguiente`), con su llave y su cuenta, y no la PC de Jonah.
+     La app de Jonah y Yuli NO usa esto: esas dos siguen con el analisis de la PC, que lee el historial
+     completo y las sesiones reales.
+
+     Reglas que la app impone al modelo, aunque el modelo quiera otra cosa:
+       - no sube el volumen mas de 20 % respecto a la semana anterior cumplida;
+       - si la semana paso del 90 % de pulso maximo, la siguiente no sube;
+       - con molestia anotada, la semana siguiente se queda igual o baja, sin calidad;
+       - nunca pasa los topes de larga de la distancia elegida;
+       - la semana de la carrera no se toca;
+       - si el modelo regresa algo raro (sin semanas, km absurdos, tipos inventados), no se usa. */
 (function () {
   'use strict';
   var A = window.Agente;
@@ -726,7 +740,39 @@
                       bajar_volumen: 'Baja un poco' };
     var chips = r.cambios.map(function (c) { return '<span class="chip">' + esc(etiquetas[c] || c) + '</span>'; }).join('');
     caja.innerHTML = '<div class="fila"><h2 style="margin:0">Revisión de la semana ' + r.semana + '</h2>' + chips + '</div>' +
-      '<p class="peq" style="margin:6px 0 0">' + esc(r.razones.join(' ')) + '</p>';
+      '<p class="peq" style="margin:6px 0 0">' + esc(r.razones.join(' ')) + '</p>' + cajaModelo();
+    engancharModelo();
+  }
+
+  // Sin coach en casa, el plan lo puede mover un modelo al que la persona le pone su cuenta.
+  // La llave vive en este telefono y sólo viaja al endpoint del modelo; la pantalla no la muestra.
+  function cajaModelo() {
+    var tiene = !!A.iaLlave();
+    return '<details class="peq" style="margin-top:10px">' +
+      '<summary>Plan con un modelo en la nube' + (tiene ? ' · conectado' : '') + '</summary>' +
+      '<p style="margin:8px 0 4px">' + esc(tiene
+        ? 'Guardada. Cuando quieras, la app pregunta si la próxima semana sube o se queda, y te lo enseña antes de tocarlo.'
+        : 'Si no tienes a nadie que te ajuste el plan, pon aquí la llave de tu cuenta. La app sólo manda las sesiones de esa semana, sin tu nombre.') + '</p>' +
+      '<div class="fila"><input id="iaLlave" type="password" placeholder="llave (sk-…)" autocomplete="off">' +
+      '<button id="iaGuardar">' + (tiene ? 'Cambiar' : 'Guardar') + '</button></div>' +
+      '<div class="fila" style="margin-top:6px"><input id="iaModelo" placeholder="modelo (gpt-4o-mini)" value="' +
+      esc(A.iaModelo() || '') + '"></div>' +
+      '<p class="peq" id="iaAviso" style="margin:6px 0 0"></p></details>';
+  }
+
+  function engancharModelo() {
+    var b = $('#iaGuardar');
+    if (!b || b.dataset.listo) return;
+    b.dataset.listo = '1';
+    b.onclick = function () {
+      var campo = $('#iaLlave'), k = (campo || {}).value || '';
+      A.iaLlave(k);
+      A.iaModelo(($('#iaModelo') || {}).value || '');
+      var av = $('#iaAviso');
+      if (av) av.textContent = k ? 'Guardada. No se muestra en pantalla ni se manda a nadie más.'
+                                 : 'Sin llave: el plan queda como está.';
+      if (campo && k) campo.value = '';
+    };
   }
 
   // -------------------------------------------------------------- registro
