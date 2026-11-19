@@ -69,6 +69,8 @@
     // Estado del aviso: sirve para saber desde el telefono si el agente se entero o no.
     if (e.ultimoAviso && typeof e.ultimoAviso === 'object') base.ultimoAviso = e.ultimoAviso;
     if (Array.isArray(e.pendientes)) base.pendientes = e.pendientes.slice(-30);
+    // Si la plantilla (Jonah, Yuli) ya se quito de esta copia, no vuelve sola al recargar.
+    if (e.salida && typeof e.salida === 'object') base.salida = e.salida;
     // Salida del registro: si se guardo (aunque sea con los dos apagados) mandan los dos campos.
     if (e.salida && typeof e.salida === 'object') {
       base.salida = { jonah: e.salida.jonah !== false, yuli: e.salida.yuli !== false };
