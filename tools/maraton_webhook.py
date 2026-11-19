@@ -52,6 +52,19 @@ def avisar_al_agente(texto: str) -> bool:
         return False
 
 
+# Bitacora de peticiones: sirve para saber si el telefono de verdad llego al receptor,
+# distinguiendo el aparato por el User-Agent y sin apuntar el secreto.
+def _anotar(metodo, camino, cabeceras):
+    try:
+        ua = (cabeceras.get("User-Agent") or "")[:90]
+        limpio = re.sub(r"/(hook|feedback)/[^/]+", r"/\1/[oculto]", camino)
+        linea = "%s %s %s | %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), metodo, limpio, ua)
+        CACHE.mkdir(parents=True, exist_ok=True)
+        with open(CACHE / "peticiones.log", "a", encoding="utf-8") as f:
+            f.write(linea)
+    except Exception:
+        pass
+
 class Manejador(BaseHTTPRequestHandler):
     def log_message(self, fmt, *a):  # silencio: el log util es el jsonl
         pass
@@ -66,6 +79,7 @@ class Manejador(BaseHTTPRequestHandler):
         self.wfile.write(cuerpo)
 
     def do_OPTIONS(self):
+        _anotar('OPTIONS', self.path, self.headers)
         # La app manda mode:'cors' para poder ver si el aviso entro (y si no, el motivo).
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -75,6 +89,7 @@ class Manejador(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        _anotar('GET', self.path, self.headers)
         # La app pregunta por su feedback: GET /feedback/<secreto>/<atleta>
         ruta = self.path.split("?")[0].rstrip("/")
         partes = [p for p in ruta.split("/") if p]
@@ -110,6 +125,7 @@ class Manejador(BaseHTTPRequestHandler):
         return self._responder(200, salida)
 
     def do_POST(self):
+        _anotar('POST', self.path, self.headers)
         # Detras de tailscale serve el prefijo /maraton se conserva: se acepta con o sin el.
         ruta = self.path.split("?")[0].rstrip("/")
         partes = [p for p in ruta.split("/") if p]

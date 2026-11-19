@@ -26,7 +26,10 @@ INICIO = date(2026, 11, 9)
 VAULT = Path(r"C:\Users\chris\Documents\Obsidian\Jonah\02 - Proyectos")
 NOTAS = {"jonah": VAULT / "Maraton - plan 21 semanas.md",
          "yuli": VAULT / "Maraton - plan de Yuli.md"}
-TECHOS = {"jonah": 134, "yuli": 136}          # techo de Z2, de las notas de zonas
+# Techo de Z2 segun la nota de zonas (Karvonen con la FC de reposo vigente).
+# jonah: 47 de reposo y 178 de max -> Z2 132-145. yuli: Z2 118-136.
+# Si cambia la FC de reposo hay que recalcular las dos, no ajustar a ojo.
+TECHOS = {"jonah": 145, "yuli": 136}
 DURAS = {"calidad", "larga", "carrera"}
 PALABRA_RIESGO = ("irradia", "hacia la pierna", "hormigueo", "adormec", "punzada",
                   "no puedo apoyar", "hinchado", "clavada")
