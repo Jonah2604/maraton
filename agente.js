@@ -1140,6 +1140,11 @@ function rellenar(plan, inicio) {
       e.planes[id] = plan;
       e.registro[id] = []; e.ajustes[id] = [];
       if (o.perfil !== false) e.perfiles[id] = { nombre: nombre };
+      // La plantilla (Jonah, Yuli) es de quien compro la app; en una copia que se presta o se empieza
+      // de cero, se apaga sola la primera vez que aparece un corredor propio. No se borra nada: se
+      // puede volver a encender en Ajustes.
+      var suyos = Object.keys(e.planes).filter(function (k) { return !PLANES_BASE.atletas[k]; });
+      if (suyos.length === 1) e.salida = { jonah: false, yuli: false };
       if (!guardar(e)) return { ok: false, error: 'no se pudo guardar' };
       avisar();
       return { ok: true, id: id, nombre: nombre, objetivo: objetivo, base: base,

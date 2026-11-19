@@ -483,7 +483,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v50';
+  var APP_V = 'v51';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
@@ -1136,6 +1136,16 @@
     $('#ajAviso').className = 'aviso ok';
   }
 
+  // Marca cual vista esta a la vista. Va aparte porque pintarTodo se sale antes en la app en blanco.
+  function pintarBarra() {
+    Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) {
+      b.classList.toggle('on', b.dataset.v === vista);
+    });
+    ['Hoy','Plan','Reg','Agente'].forEach(function (v) {
+      $('#v' + v).classList.toggle('oculto', v !== vista);
+    });
+  }
+
   function pintarTodo() {
     if (vieneEnBlanco()) { pintarEnBlanco(); return; }
     pintarAtletas(); pintarHoy(); pintarPlan(); pintarReg(); pintarAgente();
@@ -1161,12 +1171,7 @@
       '<button class="bt" id="bEmpezar">Poner mis datos</button></div>';
     ['Plan', 'Reg', 'Agente'].forEach(function (v) { $('#v' + v).innerHTML = ''; });
     $('#bEmpezar').onclick = abrirAlta;
-    Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) {
-      b.classList.toggle('on', b.dataset.v === 'Hoy');
-    });
-    ['Hoy','Plan','Reg','Agente'].forEach(function (v) {
-      $('#v' + v).classList.toggle('oculto', v !== 'Hoy');
-    });
+    pintarBarra();           // el boton de abajo se pone solo en Hoy
   }
 
   // --------------------------------------------------------------- registro
