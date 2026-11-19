@@ -1418,8 +1418,14 @@
   }
   // Un solo camino para guardar lo importado: si el dia ya tiene ese tipo, no entra.
   function guardarActividad(r, manual) {
-    var dup = A.leer(atleta).registro.some(function (s) { return s.fecha === r.fecha && s.tipo === r.tipo; });
+    var reg = A.leer(atleta).registro;
+    var dup = reg.some(function (s) { return s.fecha === r.fecha && s.tipo === r.tipo; });
     if (dup && !manual) return { ok: false, error: 'Ese dia ya tiene una sesion de ' + r.tipo };
+    // La fuerza y la corrida del mismo dia son dos estimulos: no se pisan entre si.
+    var corriendo = ['calidad', 'facil', 'larga', 'carrera', 'otro'].indexOf(r.tipo) >= 0;
+    if (corriendo && !manual && reg.some(function (s) {
+      return s.fecha === r.fecha && ['calidad', 'facil', 'larga', 'carrera', 'otro'].indexOf(s.tipo) >= 0;
+    })) return { ok: false, error: 'Ese dia ya tiene una corrida' };
     var s = { fecha: r.fecha, tipo: r.tipo, km: r.km, min: r.min };
     if (r.fc_media !== undefined && r.fc_media !== null) s.fc_media = r.fc_media;
     if (r.fc_max !== undefined && r.fc_max !== null) s.fc_max = r.fc_max;

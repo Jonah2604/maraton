@@ -1089,8 +1089,19 @@ function rellenar(plan, inicio) {
       if (temp !== null && (!isFinite(temp) || temp < -20 || temp > 55)) return { ok: false, error: 'temperatura fuera de rango (-20 a 55)' };
 
       var e = cargar();
+      // El mismo dia puede tener la corrida Y la fuerza: son dos estimulos, no un duplicado.
+      // La fuerza solo se rechaza contra otra fuerza; las carreras entre si, como siempre.
       var dup = e.registro[id].some(function (r) { return r.fecha === fecha && r.tipo === tipo; });
       if (dup) return { ok: false, error: 'ya hay una sesion de ' + tipo + ' el ' + fecha };
+      // Una corrida y la fuerza del mismo dia conviven: solo se estorban los del mismo tipo
+      // (salvo dos 'otro', que si son cosas distintas). Una segunda corrida el dia que ya
+      // tiene fuerza se permite porque la fuerza no cubre el estimulo del plan.
+      if (tipo !== 'fuerza' && tipo !== 'otro') {
+        var yaCorrio = e.registro[id].some(function (r) {
+          return r.fecha === fecha && ['calidad', 'facil', 'larga', 'carrera', 'otro'].indexOf(r.tipo) >= 0;
+        });
+        if (yaCorrio) return { ok: false, error: 'ya hay una corrida ese dia (' + fecha + ')' };
+      }
 
       var fila = {
         fecha: fecha, tipo: tipo, km: km, min: min,
