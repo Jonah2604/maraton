@@ -70,6 +70,39 @@ A.iaProveedor('');
 
 A.pedirPlanIA(id, 2).then(r => {
   ok(r.ok === false && /llave/.test(r.error || ''), 'sin llave no llama al modelo');
-  console.log(fallos ? 'FALLOS: ' + fallos : 'TODO BIEN');
-  process.exit(fallos ? 1 : 0);
+  return null;
 });
+
+// --- proveedores: Gemini tiene formato propio; los dos se filtran igual
+(function () {
+  const respuestas = {
+    gemini: JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ filas: [
+      { tipo: 'facil', km: Math.round(kmPlan * 0.4 * 10) / 10, min: 40 },
+      { tipo: 'larga', km: Math.round(kmPlan * 0.5 * 10) / 10, min: 70 }] }) }] } }] }),
+    openai: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ filas: [
+      { tipo: 'facil', km: Math.round(kmPlan * 0.4 * 10) / 10, min: 40 },
+      { tipo: 'larga', km: Math.round(kmPlan * 0.5 * 10) / 10, min: 70 }] }) } }] })
+  };
+  let ultima = '';
+  global.fetch = (u, o) => { ultima = String(u); const esG = ultima.indexOf('generativelanguage') >= 0;
+    const cuerpo = esG ? respuestas.gemini : respuestas.openai;
+    return Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve(typeof cuerpo === 'string' ? JSON.parse(cuerpo) : cuerpo) }); };
+  ctx.fetch = global.fetch;
+  A.iaLlave('AIza-prueba'); A.iaProveedor('gemini');
+  A.pedirPlanIA(id, 2).then(r => {
+    ok(ultima.indexOf(':generateContent') > 0, 'Gemini usa su propio endpoint');
+    ok(r.ok === true && r.filas.length === 2, 'la respuesta de Gemini se filtra y se usa');
+    if (!r.ok) console.log('     error:', r.error);
+    A.iaLlave('gsk_prueba'); A.iaProveedor('groq');
+    return A.pedirPlanIA(id, 2);
+  }).then(r => {
+    ok(ultima.indexOf('api.groq.com/openai/v1') >= 0, 'Groq usa el formato compatible con OpenAI');
+    ok(r.ok === true && r.filas.length === 2, 'la respuesta de Groq se filtra y se usa');
+    if (!r.ok) console.log('     error:', r.error);
+    A.iaLlave(''); A.iaProveedor('');
+    console.log(fallos ? 'FALLOS: ' + fallos : 'TODO BIEN');
+    process.exit(fallos ? 1 : 0);
+  });
+})();
+

@@ -924,10 +924,32 @@ function rellenar(plan, inicio) {
       if (!r.ok) return { ok: false, error: 'Google respondio ' + r.status };
       return r.json();
     }).then(function (j) {
-      if (!j || !j.ok) return j;
+      if (!j) return { ok: false, error: 'Google no contesto' };
+      if (j.ok === false) return j;
       var partes = ((((j.candidates || [])[0] || {}).content) || {}).parts || [];
       var txt = partes.map(function (p) { return p.text || ''; }).join('');
       if (!txt) return { ok: false, error: 'Google no devolvio texto' };
+      return txt;
+    });
+  }
+
+  function pedirCompatible(llave, url, modelo, prompt) {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + llave },
+      body: JSON.stringify({
+        model: modelo, temperature: 0.2,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    }).then(function (r) {
+      if (r.status === 401 || r.status === 403) return { ok: false, error: 'la llave no sirve para ese proveedor' };
+      if (r.status === 429) return { ok: false, error: 'se acabo la cuota gratis por hoy; prueba mañana o pon otra llave' };
+      if (!r.ok) return { ok: false, error: 'el modelo respondio ' + r.status };
+      return r.json();
+    }).then(function (j) {
+      if (!j || j.ok === false) return j;
+      var txt = ((((j.choices || [])[0] || {}).message) || {}).content || '';
+      if (!txt) return { ok: false, error: 'el modelo no devolvio texto' };
       return txt;
     });
   }
@@ -948,7 +970,8 @@ function rellenar(plan, inicio) {
     var esGemini = prov === 'gemini' || /generativelanguage\.googleapis\.com/.test(url);
     if (esGemini) {
       return pedirGemini(llave, url, modelo, promptDePlan(carga)).then(function (r) {
-        if (typeof r !== 'string') return r;      // ya viene con error
+        if (r && r.ok === false) return r;            // el que fallo ya trae su error
+        if (typeof r !== 'string') return { ok: false, error: 'Google devolvio algo que no es texto' };
         return filtrarPlanIA(r, id, n);
       }).catch(function () { return { ok: false, error: 'no se pudo preguntar al modelo' }; });
     }
@@ -962,11 +985,15 @@ function rellenar(plan, inicio) {
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + llave },
       body: JSON.stringify(cuerpo)
     }).then(function (r) {
+      if (r.status === 401 || r.status === 403) return { ok: false, error: 'la llave no sirve para ese proveedor' };
+      if (r.status === 429) return { ok: false, error: 'se acabo la cuota gratis por hoy; prueba mañana o pon otra llave' };
       if (!r.ok) return { ok: false, error: 'el modelo respondio ' + r.status };
       return r.json();
     }).then(function (j) {
-      if (!j || !j.ok) return j;
+      if (!j) return { ok: false, error: 'el modelo no contesto' };
+      if (j.ok === false) return j;
       var txt = ((((j.choices || [])[0] || {}).message) || {}).content || '';
+      if (!txt) return { ok: false, error: 'el modelo no devolvio texto' };
       return filtrarPlanIA(txt, id, n);
     }).catch(function (e) { return { ok: false, error: 'no se pudo preguntar al modelo' }; });
   }
