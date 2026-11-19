@@ -1269,7 +1269,7 @@ function rellenar(plan, inicio) {
     estadoAviso: function () { var e = cargar(); return { ultimoAviso: e.ultimoAviso || null, pendientes: (e.pendientes || []).length }; },
 
     // Al abrir la app: si hubo avisos que no salieron, se reenvian. Devuelve cuantos.
-    reenviar: function () { return reenviarPendientes(); },
+    reenviar: function (forzar) { return reenviarPendientes(forzar === true); },
 
     feedback: feedback,
 
@@ -1665,13 +1665,15 @@ function rellenar(plan, inicio) {
   // Si la ultima vez que la app hablo con el receptor fue bien, no hay nada que reenviar.
   // Si la cola trae algo, o si el ultimo intento fallo, o si se anotaron sesiones despues del
   // ultimo aviso bueno, se manda el registro completo otra vez.
-  function reenviarPendientes() {
+  // Con forzar=true se manda siempre: es lo que hace el boton «Pedir analisis», porque ahi el
+  // corredor esta pidiendo que se recalcule con lo que tiene ahora, no que se revise la cola.
+  function reenviarPendientes(forzar) {
     var e = cargar();
     if (!e.webhook) return 0;
     var cola = (e.pendientes || []).length;
     var ultimo = e.ultimoAviso || null;
     var crecio = Number(e.sesionesDesdeAviso || 0) > 0;
-    if (!cola && ultimo && ultimo.ok && !crecio) return 0;
+    if (!forzar && !cola && ultimo && ultimo.ok && !crecio) return 0;
     var quien = cola ? e.pendientes[cola - 1].atleta : (e.ultimoAtleta || null);
     if (!quien || !e.registro[quien]) quien = Object.keys(e.registro || {})[0];
     if (!quien || !e.registro[quien]) return 0;
@@ -1681,7 +1683,7 @@ function rellenar(plan, inicio) {
       plan: { inicio: ap.inicio || null, semanas: ap.semanas },
       registro: e.registro, ajustes: e.ajustes, pendientes: e.pendientes.length };
     enviar(e.webhook, JSON.stringify(cuerpo));
-    return e.pendientes.length;
+    return e.pendientes.length || 1;
   }
 
   // Recoge un #agent=... al cargar, sin depender de que la UI exista.

@@ -479,6 +479,9 @@
 
 <script src="agente.js"></script>
 <script>
+
+  // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
+  var APP_V = 'v36';
 (function () {
   'use strict';
   var A = window.Agente;
@@ -767,36 +770,39 @@
 
   function pedirFeedback() {
     var btn = $('#bFb');
+    var ver = (typeof APP_V !== 'undefined') ? APP_V : '?';
     if (btn) { btn.disabled = true; btn.textContent = 'Calculando…'; }
     var suelta = function () { if (btn) { btn.disabled = false; btn.textContent = '↻ Pedir análisis'; } };
-    var fallo = function (t) { pintarFeedbackError(t); suelta(); };
-    // El analisis lo hace la PC con lo que le llego. Si el aviso de hoy no ha entrado, pedirlo
-    // devuelve el de la vez pasada y parece que el corredor no subio nada: primero se confirma
-    // que el aviso llego y luego se pide, repitiendo hasta que el analisis sea posterior al aviso.
-    var esperar = function (intentos) {
-      var e = (A.estadoAviso && A.estadoAviso()) || {};
-      var u = e.ultimoAviso || null;
-      var reciente = u && u.cuando && (Date.now() - new Date(u.cuando).getTime()) < 60000;
-      if (u && reciente && u.ok) return traer(4);
-      if (u && reciente && !u.ok) return fallo('no se pudo mandar el registro a la PC: ' + (u.fallo || 'sin salida'));
-      if (intentos <= 0) return fallo('la PC no confirmo el aviso; revisa que Tailscale este prendido');
-      setTimeout(function () { esperar(intentos - 1); }, 1200);
-    };
+    var fallo = function (t) { pintarFeedbackError(t + ' (' + ver + ')'); suelta(); };
+    // Se compara el aviso contra el que había al pulsar, no contra el reloj: el envío puede
+    // tardar y el reloj del teléfono no es el de la PC.
+    var huella = function (u) { return u ? [u.cuando, u.ok, u.fallo || '', u.codigo || 0].join('|') : 'nada'; };
+    var antes = huella((A.estadoAviso() || {}).ultimoAviso);
     var traer = function (intentos) {
       var p = A.feedback(atleta);
       if (!p || !p.then) return fallo('sin respuesta de la PC');
       p.then(function (j) {
-        if (!j || !j.ok) return fallo((j && j.error) || 'la PC no contesto');
+        if (!j || !j.ok) return fallo((j && j.error) || 'la PC no contestó');
         var rec = j.recibido ? new Date(j.recibido).getTime() : 0;
-        var hecho = j.t || 0;   // ms epoch del receptor: el mismo reloj que 'recibido'
+        var hecho = j.t || 0;
         if (rec && hecho && hecho < rec - 1000 && intentos > 0) {
           return setTimeout(function () { traer(intentos - 1); }, 3000);
         }
-        pintarFeedbackCoach(j);
-        suelta();
-      }).catch(function () { fallo('no se pudo traer el analisis'); });
+        pintarFeedbackCoach(j); suelta();
+      }).catch(function () { fallo('no se pudo traer el análisis'); });
     };
-    try { esperar(20); } catch (x) { fallo('no se pudo pedir'); }
+    var esperar = function (intentos) {
+      var u = (A.estadoAviso() || {}).ultimoAviso || null;
+      if (huella(u) !== antes) {
+        if (u && u.ok) return traer(4);
+        return fallo('no se pudo mandar el registro a la PC: ' + ((u && u.fallo) || 'sin salida'));
+      }
+      if (intentos <= 0) return fallo('la PC no confirmó el aviso; revisa que Tailscale esté prendido');
+      setTimeout(function () { esperar(intentos - 1); }, 1000);
+    };
+    if (!A.webhook()) return fallo('falta la dirección del receptor');
+    A.reenviar(true);   // manda lo que tiene la app ahora mismo, no lo que quedó de la última vez
+    esperar(25);
   }
 
   function pintarFeedbackError(t) {
