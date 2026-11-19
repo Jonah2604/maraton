@@ -1253,6 +1253,9 @@ function rellenar(plan, inicio) {
 
     webhook: function (url) {
       var e = cargar();
+      // Sin argumento solo consulta: antes borraba la direccion guardada, y cualquier
+      // lectura descuidada (por ejemplo al pintar el aviso) dejaba la app sin receptor.
+      if (url === undefined) return e.webhook || '';
       if (url === null || url === '') { e.webhook = null; guardar(e); return { ok: true, webhook: null }; }
       if (!/^https:\/\/[^\s]+$/.test(url) && !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(url)) {
         return { ok: false, error: 'la URL debe empezar con https:// (o http://127.0.0.1 para pruebas)' };
