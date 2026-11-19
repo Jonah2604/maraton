@@ -310,6 +310,8 @@
       <h2>Claves de datos</h2>
       <div class="chips" id="aReg"></div>
       <button class="bt pri" style="width:100%;margin-top:10px" id="bExportar">⬇️ Exportar plan (.json)</button>
+      <p class="nota" style="margin-top:10px">Tus datos viven sólo en este teléfono. Guarda ese archivo si vas a
+      cambiar de equipo. <a href="./privacidad.html" target="_blank" rel="noopener">Aviso de privacidad</a></p>
       <button class="bt" style="width:100%;margin-top:8px" id="bImportar">⬆️ Importar plan</button>
       <input type="file" id="fImportar" accept="application/json,.json" class="oculto">
       <div class="aviso" id="aAviso"></div>
@@ -483,7 +485,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v53';
+  var APP_V = 'v54';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
