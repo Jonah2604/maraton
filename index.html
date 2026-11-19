@@ -482,7 +482,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v43';
+  var APP_V = 'v44';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
@@ -748,15 +748,26 @@
   // La llave vive en este telefono y sólo viaja al endpoint del modelo; la pantalla no la muestra.
   function cajaModelo() {
     var tiene = !!A.iaLlave();
+    var prov = A.iaProveedor();
+    var P = A.proveedores[prov] || A.proveedores.openai;
+    var opciones = Object.keys(A.proveedores).map(function (k) {
+      var p = A.proveedores[k];
+      return '<option value="' + k + '"' + (k === prov ? ' selected' : '') + '>' + esc(p.nombre) + '</option>';
+    }).join('');
+    var sinPagar = prov === 'gemini' || prov === 'groq';
     return '<details class="peq" style="margin-top:10px">' +
       '<summary>Plan con un modelo en la nube' + (tiene ? ' · conectado' : '') + '</summary>' +
       '<p style="margin:8px 0 4px">' + esc(tiene
-        ? 'Guardada. Cuando quieras, la app pregunta si la próxima semana sube o se queda, y te lo enseña antes de tocarlo.'
+        ? 'Listo. La app le pregunta a tu modelo si la próxima semana sube o se queda, y te lo enseña antes de tocar nada.'
         : 'Si no tienes a nadie que te ajuste el plan, pon aquí la llave de tu cuenta. La app sólo manda las sesiones de esa semana, sin tu nombre.') + '</p>' +
-      '<div class="fila"><input id="iaLlave" type="password" placeholder="llave (sk-…)" autocomplete="off">' +
+      '<div class="fila" style="margin-bottom:6px"><select id="iaProv">' + opciones + '</select>' +
+      '<input id="iaModelo" placeholder="' + esc(P.modelo) + '" value="' + esc(A.iaModelo() || '') + '"></div>' +
+      '<div class="fila"><input id="iaLlave" type="password" placeholder="' + esc(P.llave) + '" autocomplete="off">' +
       '<button id="iaGuardar">' + (tiene ? 'Cambiar' : 'Guardar') + '</button></div>' +
-      '<div class="fila" style="margin-top:6px"><input id="iaModelo" placeholder="modelo (gpt-4o-mini)" value="' +
-      esc(A.iaModelo() || '') + '"></div>' +
+      (sinPagar ? '<p class="peq" style="margin:6px 0 0">Con éste no hace falta pagar: ' +
+        (prov === 'gemini'
+          ? 'la llave sale gratis en <b>aistudio.google.com/apikey</b> con tu cuenta de Google.'
+          : 'la llave sale gratis en <b>console.groq.com/keys</b>, sin tarjeta.') + '</p>' : '') +
       '<p class="peq" id="iaAviso" style="margin:6px 0 0"></p></details>';
   }
 
@@ -764,8 +775,21 @@
     var b = $('#iaGuardar');
     if (!b || b.dataset.listo) return;
     b.dataset.listo = '1';
+    var sel = $('#iaProv');
+    if (sel) sel.onchange = function () {
+      A.iaProveedor(sel.value);
+      var P = A.proveedores[sel.value] || {};
+      var m = $('#iaModelo');
+      if (m) m.placeholder = P.modelo || '';
+      pintarRevision();       // redibuja la caja con el aviso del proveedor elegido
+    };
     b.onclick = function () {
       var campo = $('#iaLlave'), k = (campo || {}).value || '';
+      if (A.iaProveedor() !== 'openai' && /^sk-/.test(k)) {
+        var av0 = $('#iaAviso');
+        if (av0) av0.textContent = 'Esa llave parece de OpenAI; elige OpenAI arriba o pega la del proveedor elegido.';
+        return;
+      }
       A.iaLlave(k);
       A.iaModelo(($('#iaModelo') || {}).value || '');
       var av = $('#iaAviso');

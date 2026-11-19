@@ -61,6 +61,13 @@ ok(A.iaLlave() === 'sk-prueba-123', 'la llave se guarda');
 A.iaLlave('');
 ok(A.iaLlave() === '', 'la llave se borra');
 
+A.iaProveedor('gemini');
+ok(A.iaProveedor() === 'gemini', 'se elige Gemini como proveedor');
+A.iaProveedor('groq');
+ok(A.iaProveedor() === 'groq', 'se elige Groq como proveedor');
+ok(A.iaProveedor('inventado') === false, 'no acepta un proveedor inventado');
+A.iaProveedor('');
+
 A.pedirPlanIA(id, 2).then(r => {
   ok(r.ok === false && /llave/.test(r.error || ''), 'sin llave no llama al modelo');
   console.log(fallos ? 'FALLOS: ' + fallos : 'TODO BIEN');

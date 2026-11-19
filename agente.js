@@ -880,16 +880,77 @@ function rellenar(plan, inicio) {
       'La nota va dirigida al corredor, en segunda persona, sin prometer tiempos. Datos: ' + JSON.stringify(carga);
   }
 
-  // Llama a un endpoint compatible con OpenAI (OpenAI, Groq, DeepSeek, un Ollama local...).
+  var PROVEEDOR = 'maraton.ia.proveedor';
+
+  // Quien no paga un plan tampoco tiene por que pelear con esto: se elige el proveedor y ya.
+  // Gemini y Groq dan llave gratis sin tarjeta, y son los dos que se ofrecen.
+  var PROVEEDORES = {
+    openai: { nombre: 'OpenAI', url: 'https://api.openai.com/v1/chat/completions', modelo: 'gpt-4o-mini', llave: 'sk-…' },
+    gemini: { nombre: 'Google Gemini (gratis)', url: 'https://generativelanguage.googleapis.com/v1beta', modelo: 'gemini-3.6-flash', llave: 'AIza…' },
+    groq: { nombre: 'Groq (gratis)', url: 'https://api.groq.com/openai/v1/chat/completions', modelo: 'openai/gpt-oss-20b', llave: 'gsk_…' },
+    otro: { nombre: 'Otro (compatible con OpenAI)', url: '', modelo: '', llave: '…' }
+  };
+
+  function iaProveedor(v) {
+    if (v === undefined) {
+      try {
+        var g = localStorage.getItem(PROVEEDOR);
+        if (g && PROVEEDORES[g]) return g;
+        // sin nada guardado: si la llave parece de Google, es Gemini
+        var k = leerLlave();
+        if (/^AIza/.test(k)) return 'gemini';
+        if (/^gsk_/.test(k)) return 'groq';
+        return 'openai';
+      } catch (e) { return 'openai'; }
+    }
+    if (!PROVEEDORES[v]) return false;
+    try { localStorage.setItem(PROVEEDOR, v); } catch (e) { }
+    return true;
+  }
+
+  // Gemini tiene su propio formato: no es compatible con OpenAI y hay que hablarle como es.
+  function pedirGemini(llave, url, modelo, prompt) {
+    var cuerpo = {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.2, responseMimeType: 'application/json' }
+    };
+    return fetch(String(url).replace(/\/$/, '') + '/models/' + encodeURIComponent(modelo) + ':generateContent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': llave },
+      body: JSON.stringify(cuerpo)
+    }).then(function (r) {
+      if (r.status === 400 || r.status === 403) return { ok: false, error: 'la llave de Google no sirve o no tiene permiso (revisa que sea de AI Studio)' };
+      if (r.status === 429) return { ok: false, error: 'se acabo la cuota gratis por hoy; prueba mañana o pon otra llave' };
+      if (!r.ok) return { ok: false, error: 'Google respondio ' + r.status };
+      return r.json();
+    }).then(function (j) {
+      if (!j || !j.ok) return j;
+      var partes = ((((j.candidates || [])[0] || {}).content) || {}).parts || [];
+      var txt = partes.map(function (p) { return p.text || ''; }).join('');
+      if (!txt) return { ok: false, error: 'Google no devolvio texto' };
+      return txt;
+    });
+  }
+
+  // Llama a un endpoint compatible con OpenAI (OpenAI, Groq, DeepSeek, un Ollama local...) o a Gemini.
   function pedirPlanIA(id, n, o) {
     o = o || {};
     var carga = cargaParaModelo(id, n);
     if (!carga) return Promise.resolve({ ok: false, error: 'esa semana no esta en el plan' });
+    var prov = o.proveedor || iaProveedor();
+    var P = PROVEEDORES[prov] || PROVEEDORES.openai;
     var llave = o.llave || leerLlave();
-    var url = String(o.url || 'https://api.openai.com/v1/chat/completions');
-    var modelo = o.modelo || iaModelo() || 'gpt-4o-mini';
+    var url = String(o.url || P.url);
+    var modelo = o.modelo || iaModelo() || P.modelo;
     if (!llave && !/127\.0\.0\.1|localhost/.test(url)) {
       return Promise.resolve({ ok: false, error: 'falta la llave del modelo' });
+    }
+    var esGemini = prov === 'gemini' || /generativelanguage\.googleapis\.com/.test(url);
+    if (esGemini) {
+      return pedirGemini(llave, url, modelo, promptDePlan(carga)).then(function (r) {
+        if (typeof r !== 'string') return r;      // ya viene con error
+        return filtrarPlanIA(r, id, n);
+      }).catch(function () { return { ok: false, error: 'no se pudo preguntar al modelo' }; });
     }
     var cuerpo = {
       model: modelo, temperature: 0.2,
@@ -1117,6 +1178,8 @@ function rellenar(plan, inicio) {
     filtrarPlanIA: filtrarPlanIA,
     iaLlave: iaLlave,
     iaModelo: iaModelo,
+    iaProveedor: iaProveedor,
+    proveedores: PROVEEDORES,
     repartirSemana: repartirSemana,
 
     // Fuerza paso a paso: lo que la ficha resume en una linea y aqui se explica.
