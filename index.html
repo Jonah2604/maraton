@@ -483,7 +483,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v52';
+  var APP_V = 'v53';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
@@ -523,9 +523,11 @@
   // Si la app viene en blanco (nadie la ha usado en este telefono), no se inventa un corredor de ejemplo:
   // se abre el formulario y se pregunta lo minimo. Los lugares de la plantilla no se pintan vacios.
   function vieneEnBlanco() {
-    var c = A.corredores();
-    var suyos = (c.corredores || []).filter(function (a) { return !a.plantilla; });
-    return suyos.length === 0;
+    // Ojo: la plantilla (Jonah, Yuli) trae plan pero no cuenta como uso. La copia esta en blanco
+    // solo si nadie ha registrado nada y nadie ha creado su propio corredor.
+    var c = (A.corredores().corredores || []);
+    var usados = c.filter(function (a) { return !a.plantilla || (a.registros || 0) > 0; });
+    return usados.length === 0;
   }
 
   function abrirAlta() {
@@ -1149,6 +1151,7 @@
 
   function pintarTodo() {
     if (vieneEnBlanco()) { pintarEnBlanco(); return; }
+    if (HOY_HTML !== null) { $('#vHoy').innerHTML = HOY_HTML; HOY_HTML = null; }
     pintarAtletas(); pintarHoy(); pintarPlan(); pintarReg(); pintarAgente();
     if ($('#fbTexto')) pintarFeedbackCoach(A.feedbackGuardado(atleta));
     if ($('#ntGuardar')) $('#ntGuardar').onclick = guardarNotaUI;
@@ -1163,14 +1166,16 @@
 
   // La primera vez que alguien abre la app no hay plan, ni nombre, ni historial: se pide lo minimo
   // y se avisa que ese plan lo arma la app en el telefono. Nada de datos de otra persona.
+  var HOY_HTML = null;     // el HTML de Hoy tal como viene en la app; se devuelve al salir del blanco
+
   function pintarEnBlanco() {
     $('#atletas').innerHTML = '';
+    if (HOY_HTML === null) HOY_HTML = $('#vHoy').innerHTML;
     $('#vHoy').innerHTML = '<div class="card">' +
       '<h3 style="margin:0 0 6px">Empecemos por ti</h3>' +
       '<p class="peq" style="margin:0 0 10px">Esta app no trae a nadie dentro: ni nombres, ni planes, ni historial. ' +
       'Tu plan se arma aquí con tu meta y con lo que aguantas hoy.</p>' +
       '<button class="bt" id="bEmpezar">Poner mis datos</button></div>';
-    ['Plan', 'Reg', 'Agente'].forEach(function (v) { $('#v' + v).innerHTML = ''; });
     $('#bEmpezar').onclick = abrirAlta;
     pintarBarra();           // el boton de abajo se pone solo en Hoy
   }
