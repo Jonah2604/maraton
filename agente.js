@@ -1565,6 +1565,10 @@ function rellenar(plan, inicio) {
       }
       // Se apunta ANTES de intentar: si el telefono no tiene salida al agente ahora (Tailscale
       // apagado, PC dormida), la sesion queda en la cola y se reenvia al abrir la app.
+      e.ultimoAtleta = quien;
+      // sesiones nuevas desde el ultimo aviso bueno: si no entro, se reenvia al abrir
+      e.sesionesDesdeAviso = (motivo === 'reenvio') ? Number(e.sesionesDesdeAviso || 0)
+                                                   : Number(e.sesionesDesdeAviso || 0) + 1;
       encolar(e, cuerpo, motivo);
       enviar(e.webhook, JSON.stringify(cuerpo));
     } catch (x) {}
@@ -1580,7 +1584,7 @@ function rellenar(plan, inicio) {
       try {
         var e2 = cargar();
         e2.ultimoAviso = { cuando: new Date().toISOString(), ok: ok, codigo: codigo || 0, fallo: fallo || null };
-        if (ok) e2.pendientes = [];
+        if (ok) { e2.pendientes = []; e2.sesionesDesdeAviso = 0; }
         guardar(e2);
         if (global.document && typeof CustomEvent === 'function') {
           try { global.document.dispatchEvent(new CustomEvent('agente:aviso')); } catch (x) {}
@@ -1632,10 +1636,18 @@ function rellenar(plan, inicio) {
   }
 
   // Reenvia lo que quedo pendiente de avisos anteriores. Se llama al abrir la app.
+  // Si la ultima vez que la app hablo con el receptor fue bien, no hay nada que reenviar.
+  // Si la cola trae algo, o si el ultimo intento fallo, o si se anotaron sesiones despues del
+  // ultimo aviso bueno, se manda el registro completo otra vez.
   function reenviarPendientes() {
     var e = cargar();
-    if (!e.webhook || !e.pendientes || !e.pendientes.length) return 0;
-    var quien = e.pendientes[e.pendientes.length - 1].atleta;
+    if (!e.webhook) return 0;
+    var cola = (e.pendientes || []).length;
+    var ultimo = e.ultimoAviso || null;
+    var crecio = Number(e.sesionesDesdeAviso || 0) > 0;
+    if (!cola && ultimo && ultimo.ok && !crecio) return 0;
+    var quien = cola ? e.pendientes[cola - 1].atleta : (e.ultimoAtleta || null);
+    if (!quien || !e.registro[quien]) quien = Object.keys(e.registro || {})[0];
     if (!quien || !e.registro[quien]) return 0;
     var ap = atleta(quien);
     var cuerpo = { api: VERSION, cuando: new Date().toISOString(), motivo: 'reenvio',

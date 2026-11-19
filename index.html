@@ -773,8 +773,25 @@
       if (btn) { btn.disabled = false; btn.textContent = '↻ Pedir análisis'; }
     };
     try {
-      var p = A.feedback(atleta);
-      if (p && p.then) p.then(listo); else listo({ ok: false, error: 'sin respuesta' });
+      // Primero se le manda a la PC lo que la app tiene ahora: el analisis se calcula
+      // sobre lo que llega, no sobre lo que llego la ultima vez. Solo cuando el aviso
+      // entra se pide el analisis; si no entra, se dice por que y no se pinta uno viejo.
+      var esperar = function (intentos) {
+        var e = (A.estadoAviso && A.estadoAviso()) || {};
+        var u = e.ultimoAviso || null;
+        var reciente = u && u.cuando && (Date.now() - new Date(u.cuando).getTime()) < 20000;
+        if (u && reciente && u.ok) {
+          var p = A.feedback(atleta);
+          if (p && p.then) p.then(listo); else listo({ ok: false, error: 'sin respuesta' });
+          return;
+        }
+        if (u && reciente && !u.ok) {
+          return listo({ ok: false, error: 'no se pudo mandar a la PC: ' + (u.fallo || 'sin salida') });
+        }
+        if (intentos <= 0) return listo({ ok: false, error: 'la PC no confirmo el aviso; revisa que Tailscale este prendido' });
+        setTimeout(function () { esperar(intentos - 1); }, 1200);
+      };
+      esperar(10);
     } catch (x) { listo({ ok: false, error: 'no se pudo pedir' }); }
   }
 
