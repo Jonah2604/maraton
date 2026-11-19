@@ -22,6 +22,9 @@ def secreto():
 
 def pedir(path, method="GET", body=None, timeout=15):
     ctx = ssl.create_default_context(cafile=str(CERT) if CERT.exists() else None)
+    # Sin ALPN el proxy de tailscale contesta TLSV1_ALERT_INTERNAL_ERROR y la prueba
+    # parece rota cuando el camino esta bien.
+    ctx.set_alpn_protocols(["http/1.1"])   # solo 1.1: asi la respuesta se lee como texto
     raw = socket.create_connection((IP, 443), timeout=timeout)
     tls = ctx.wrap_socket(raw, server_hostname=HOST)
     req = (f"{method} {path} HTTP/1.1\r\nHost: {HOST}\r\n"
