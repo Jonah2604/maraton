@@ -494,7 +494,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v56';
+  var APP_V = 'v57';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
@@ -1850,6 +1850,16 @@
       var id = ma[1];
       var hay = A.corredores().corredores.some(function (c) { return c.id === id; });
       if (hay) { atleta = id; guardarUI(); }
+    }
+    // &z=1: el coach manda el enlace con las zonas del plan y la app las vuelve a poner.
+    if (/[#&]z=1/.test(location.hash || '')) {
+      try {
+        var rz = A.zonasPlan(atleta);
+        if (rz && rz.ok) {
+          $('#aAviso').textContent = 'Zonas del plan restauradas: Z2 ' + rz.zonas.Z2[0] + '-' + rz.zonas.Z2[1] + ' (FC máx ' + rz.fcmax + ')';
+          $('#aAviso').className = 'aviso ok';
+        }
+      } catch (e) {}
     }
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
     pintarTodo();

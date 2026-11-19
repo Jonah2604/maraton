@@ -1311,6 +1311,24 @@ function rellenar(plan, inicio) {
       return { ok: true, perfil: p, zonas: a.zonas, fcmax: a.fcmax, reajuste: reajuste };
     },
 
+    // Devuelve las zonas que fijó el coach en el plan: se usa cuando la copia de otra
+    // persona se quedo con una FC calculada por edad y el pulso de trabajo salio alto.
+    // No toca sesiones ni el calendario: solo la FC y las zonas.
+    zonasPlan: function (id) {
+      if (!idValido(id)) return { ok: false, error: 'atleta desconocido: ' + id };
+      var e = cargar();
+      var b = PLANES_BASE.atletas[id] || e.planes[id];
+      if (!b) return { ok: false, error: 'ese corredor no tiene plan base' };
+      var p = e.perfiles[id] || {};
+      if (num(b.fcmax)) p.fcmax = b.fcmax;
+      p.fc_reposo = num(b.fc_reposo) ? b.fc_reposo : null;
+      e.perfiles[id] = p;
+      if (!guardar(e)) return { ok: false, error: 'no se pudo guardar' };
+      avisar(id);
+      var a = atleta(id);
+      return { ok: true, zonas: a.zonas, fcmax: a.fcmax, fc_reposo: a.fc_reposo };
+    },
+
     // Deja el lugar en blanco para entregarlo a otra persona: borra registro, ajustes y perfil.
     reiniciar: function (id) {
       if (!idValido(id)) return { ok: false, error: 'atleta desconocido: ' + id };
