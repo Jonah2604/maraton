@@ -68,6 +68,11 @@ def carga_export(ruta):
 
 def analiza(aid, plan, registro, hoy, forzar_semana=None):
     semanas = {s["n"]: s for s in plan.get("semanas", [])}
+    # FC maxima: la del perfil del atleta. Sin ella las frases de pulso se callan en vez de suponer.
+    try:
+        fcmax = float(plan.get("fcmax") or 0) or None
+    except (TypeError, ValueError):
+        fcmax = None
     tope = max(semanas) if semanas else 21
     try:
         ini = date.fromisoformat(str(plan.get("inicio") or ""))
@@ -191,13 +196,135 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
             cambios = {"km": base_km, "larga": base_larga, "calidad": sig.get("calidad"),
                        "nota": f"Repite volumen ({hoy.isoformat()}): no se sube hasta cerrar una semana limpia"}
 
-    return {"atleta": aid, "semana": n, "fechas": sem.get("fechas"), "plan": sem, "hecho": esta,
+    return {"atleta": aid, "fcmax": fcmax, "semana": n, "fechas": sem.get("fechas"), "plan": sem,
+            "hecho": esta,
             "km": km, "km_prev": km_prev, "pct": pct, "faltan": faltan,
             "fc_alta": [r["fecha"] for r in fc_alta],
             "calurosas": [{"fecha": r["fecha"], "temp": r["temp"]} for r in calurosas],
             "molestias": [r.get("molestia") for r in molestias],
             "banderas": banderas, "decision": decision, "cambios": cambios,
             "siguiente": sig.get("n") if sig else None}
+
+
+
+# --- Lectura del desempeño -------------------------------------------------------------------
+# Lo que el corredor pide al pulsar «Pedir analisis» no es el conteo de km (eso ya lo ve en la app):
+# quiere saber COMO le fue. Estas frases salen de los numeros de sus sesiones, sin inventar nada:
+# si un dato falta, se calla; no se supone.
+DERIVA = 8          # ppm de mas entre la primera y la segunda mitad = el dia se cobro cansancio
+FC_TOPE_ESFUERZO = 0.86   # % de la FC maxima a partir del cual ya no es conversacion
+
+
+def ritmo_seg(min_, km):
+    try:
+        km = float(km or 0)
+        return (float(min_ or 0) * 60.0 / km) if km > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _reloj(s):
+    rit = ritmo_seg(s.get("min"), s.get("km"))
+    if rit is None:
+        return "%s min" % s.get("min")
+    m, seg = divmod(int(round(rit)), 60)
+    return "%s min · %d:%02d/km" % (s.get("min"), m, seg)
+
+
+def desempeno(r, fcmax=None):
+    """Frases sobre como salio cada sesion y que conviene hacer, en lenguaje de coach."""
+    ses = [s for s in (r.get("hecho") or []) if s.get("tipo") != "fuerza"]
+    if not ses:
+        return []
+    out = []
+    km_sem = round(sum(float(s.get("km") or 0) for s in r.get("hecho") or []), 1)
+    # 1) cada corrida, en una linea: ritmo, pulso y si aguanto
+    for s in ses:
+        linea = "- **%s %s** (%s): %s" % (s.get("fecha", "")[5:], s.get("tipo", ""), _reloj(s),
+                                          ("FC %s/%s" % (s.get("fc_media") or "—", s.get("fc_max") or "—")))
+        f1, f2 = s.get("fc_1a"), s.get("fc_2a")
+        try:
+            deriva = float(f2) - float(f1)
+        except (TypeError, ValueError):
+            deriva = None
+        if deriva is not None and deriva >= DERIVA:
+            linea += "; **se te fue el pulso en la segunda mitad** (+%d ppm): el ritmo te gano al final, " \
+                     "arranca 10 s/km mas lento y acaba igual de rapido" % int(deriva)
+        elif deriva is not None and deriva <= -DERIVA // 2:
+            linea += "; aguantaste mejor de lo que empezaste (-%d ppm en la segunda mitad), " \
+                     "senal de que la salida fue conservadora" % int(-deriva)
+        elif s.get("tipo") in ("calidad", "larga"):
+            linea += "; pulso estable durante toda la sesion"
+        out.append(linea)
+
+    # 3) ritmo del facil contra su ritmo historico de la tabla (si el plan lo trae)
+    fac = [s for s in ses if s.get("tipo") == "facil"]
+    ref = (r.get("plan") or {}).get("ritmo_facil") or r.get("ritmo_facil")
+    if fac and ref:
+        rit = ritmo_seg(fac[-1].get("min"), fac[-1].get("km"))
+        rref = ritmo_seg(1, ref) if rit and str(ref).count(":") == 1 else None
+        if rit and rref and abs(rit - rref) > 15:
+            out.append("- El facil te salio a %s/km contra %s/km de referencia: %s" %
+                       ("%d:%02d" % divmod(int(rit), 60), ref,
+                        "vas mas rapido de lo que toca en un facil" if rit < rref else
+                        "mas lento; revisa calor y descanso antes de apretar"))
+
+    # 4) a que pulso pide el cuerpo trabajar, y si eso invita a apretar o a frenar
+    if fcmax and fac:
+        fc = float(fac[-1].get("fc_media") or 0)
+        if fc:
+            pct = int(round(fc / float(fcmax) * 100))
+            if pct >= int(FC_TOPE_ESFUERZO * 100):
+                out.append("- El facil a %d ppm es %d%% de tu maximo: ya no es conversacion, entras en "
+                           "territorio de tempo. Si no puedes hablar en frases seguidas, baja el ritmo."
+                           % (int(fc), pct))
+            else:
+                out.append("- El facil a %d ppm (%d%% de tu maximo) dejo margen para hablar: ese es el "
+                           "pulso donde el cuerpo construye base." % (int(fc), pct))
+
+    # 5) calidad: lo que importa es cuanto mas alto llega que en un facil suyo, no una tabla
+    cal = [s for s in ses if s.get("tipo") == "calidad"]
+    facs = [s for s in ses if s.get("tipo") == "facil"]
+    for s in cal:
+        try:
+            mx = float(s.get("fc_max") or 0)
+        except (TypeError, ValueError):
+            mx = 0
+        ref_fac = 0
+        for f in facs:
+            try:
+                ref_fac = max(ref_fac, float(f.get("fc_max") or 0))
+            except (TypeError, ValueError):
+                pass
+        if mx and ref_fac and mx - ref_fac < 8:
+            out.append("- La calidad del %s llego a %d ppm, casi la misma altura que tu facil (%d ppm): "
+                       "los minutos fuertes no se distinguieron. En las series aprieta de verdad y "
+                       "recupera caminando o trotando suave."
+                       % (s.get("fecha", "")[5:], int(mx), int(ref_fac)))
+        elif mx:
+            # donde queda el pico: se dice con la FC maxima del perfil, que si es un dato suyo
+            pct = int(round(mx / float(fcmax) * 100)) if fcmax else None
+            out.append("- La calidad del %s subio hasta %d ppm%s: el estimulo de las series si llego."
+                       % (s.get("fecha", "")[5:], int(mx),
+                          (" (%d%% de tu maximo)" % pct) if pct else ""))
+    return out
+
+
+def consejo(r, fcmax=None):
+    """Una sola cosa que hacer, la mas importante de la semana."""
+    faltan = r.get("faltan") or []
+    if "larga" in faltan:
+        larga = (r.get("plan") or {}).get("larga")
+        return ("- **Lo que toca:** la larga de %s km, a ritmo en el que puedas hablar. Si el pulso se "
+                "te sube al final, camina un minuto y sigue: la distancia del dia manda mas que el ritmo."
+                % (larga if larga else ""))
+    if r.get("decision") == "recortar":
+        return "- **Lo que toca:** la proxima semana baja 10% y sin calidad nueva; la carga subio de mas."
+    if r.get("decision") == "congelar":
+        return "- **Lo que toca:** nada de volumen esta semana; primero valora la molestia."
+    if r.get("decision") == "repetir":
+        return "- **Lo que toca:** repetir el volumen de la semana, sin subir, hasta cerrar una limpia."
+    return "- **Lo que toca:** seguir el plan como esta; la semana salio limpia."
 
 
 def texto(r):
@@ -219,6 +346,10 @@ def texto(r):
                      f"{temp} | {s.get('esf') or '—'} | {(s.get('molestia') or '').strip() or '—'} |")
     else:
         L.append("Sin sesiones registradas esta semana.")
+    leidas = desempeno(r, r.get("fcmax"))
+    if leidas:
+        L += ["", "**Como te fue:**"] + leidas
+    L.append(consejo(r, r.get("fcmax")))
     L += ["", f"**Decision: {r['decision']}**"]
     if r["banderas"]:
         L += [f"- {b}" for b in r["banderas"]]
