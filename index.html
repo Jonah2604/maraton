@@ -483,7 +483,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v51';
+  var APP_V = 'v52';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
@@ -1095,6 +1095,7 @@
     }
     atleta = r.id;
     // Antes se encendia solo cada vez que habia dos corredores; ahora manda la preferencia.
+    $('#nuevo').classList.remove('abierta');   // la hoja se cierra sola al guardar
     guardarUI(); pintarTodo(); pintarAjustes();
     $('#nuevo').classList.remove('abierta');
     $('#ajAviso').textContent = r.nombre + ' · ' + nombreMeta(r.objetivo || 'base') + ', ' +
