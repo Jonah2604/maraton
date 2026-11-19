@@ -385,6 +385,7 @@ function armar(meta, p, t) {
     semanas.forEach(function (sw) { if (sw.larga > picoLarga) picoLarga = sw.larga; });
     var kmLarga;
     if (esCarrera) {
+      // la carrera es la distancia meta, aunque pase el tope de larga: es el dia de la prueba
       kmLarga = meta.km;
       cortas.forEach(function (c) { if (c.tipo !== 'larga') c.min = Math.max(10, Math.round(minDeSesion('regenerativo', 0) * 0.5)); });
     } else {
@@ -704,6 +705,115 @@ function rellenar(plan, inicio) {
     } catch (e) { return null; }
   }
 
+
+
+  /* ==================================================== revisar la semana
+     Jonah pidio que el coach revise si hay que reajustar. Esta funcion SOLO calcula que cambiar
+     y por que, a partir de lo que de verdad se corrio. No mueve el plan: para eso se pide aparte.
+     Criterios (los mismos del club, para que un corredor de 10 km no entrene como uno de maraton):
+       - si cerro la semana, la siguiente se queda como esta;
+       - si falto mas de la mitad del volume, no se sube aunque tocara subir;
+       - si encadeno dos semanas cortas, se baja ~10 % y se deja explicado;
+       - si ya trae una molestia anotada o un pulso alto de mas, se quita la calidad y se cambia por suave;
+       - en la semana de la carrera no se toca nada;
+       - si venia cumpliendo y la siguiente era descarga, se respeta la descarga.
+     Todo con numeros que existen: sin % de cumplimiento inventado ni promesas de tiempo. */
+
+  function tiposDeSemana(id, n) {
+    var a = atleta(id), out = {};
+    if (!a || !a.semanas) return out;
+    for (var i = 0; i < a.semanas.length; i++) {
+      if (a.semanas[i].n !== n || !a.semanas[i].filas) continue;
+      a.semanas[i].filas.forEach(function (f) { out[f.tipo] = 1; });
+    }
+    return out;
+  }
+
+  function revisarSemana(id, n) {
+    var a = atleta(id), e = cargar();
+    if (!a || !a.semanas) return { ok: false, error: 'ese corredor no tiene plan' };
+    var sem = null;
+    a.semanas.forEach(function (s) { if (s.n === n) sem = s; });
+    if (!sem) return { ok: false, error: 'esa semana no esta en el plan' };
+    var reg = (e.registro[id] || []).filter(function (s) { return semanaDe(s.fecha, id) === n; });
+    var km = 0, tipos = {}, fc = [], dolores = [];
+    reg.forEach(function (s) {
+      km += parseFloat(s.km) || 0;
+      tipos[s.tipo] = (tipos[s.tipo] || 0) + 1;
+      if (s.fc_media) fc.push(parseFloat(s.fc_media));
+      if (s.molestia) dolores.push(s.molestia);
+    });
+    var pct = sem.km ? Math.round(km / sem.km * 100) : 0;
+    var sig = null;
+    a.semanas.forEach(function (s) { if (s.n === n + 1) sig = s; });
+
+    var cambios = [], razones = [];
+    if (sem.carrera) {
+      razones.push('Es la semana de la carrera: no se mueve.');
+      cambios.push('dejar');
+    } else if (reg.length === 0) {
+      razones.push('No hay sesiones anotadas de esa semana.');
+      cambios.push('esperar');
+    } else if (dolores.length) {
+      razones.push('Hay una molestia anotada (' + dolores[0] + '): primero se cuida eso.');
+      cambios.push('quitar_calidad');
+      cambios.push('bajar_volumen');
+    } else if (pct < 50) {
+      razones.push('Se corrieron ' + Math.round(km * 10) / 10 + ' de ' + sem.km + ' km (' + pct + ' %): no se sube.');
+      cambios.push('repetir');
+    } else if (pct < 80) {
+      razones.push('Se corrio el ' + pct + ' % de la semana: la siguiente no sube, se queda igual.');
+      cambios.push('igual');
+    } else if (sig && sig.descarga) {
+      razones.push('Se cerro la semana (' + pct + ' %) y la siguiente es descarga: se respeta la descarga.');
+      cambios.push('dejar');
+    } else if (sig && !sig.carrera) {
+      razones.push('Se cerro la semana (' + pct + ' %): la siguiente sube como estaba previsto.');
+      cambios.push('subir');
+    } else if (sig && sig.carrera) {
+      razones.push('Sigue la semana de la carrera: se llega descansado, sin meter carga.');
+      cambios.push('dejar');
+    } else {
+      razones.push('Era la ultima semana del plan.');
+      cambios.push('dejar');
+    }
+    if (fc.length && a.fcmax) {
+      var tope = Math.round(a.fcmax * 0.9), alta = Math.max.apply(null, fc);
+      if (alta > tope) {
+        razones.push('Hubo un dia a ' + alta + ' ppm, arriba del ' + tope + ': lo suave tiene que ir suave.');
+        if (cambios.indexOf('quitar_calidad') < 0 && !sem.carrera) cambios.push('quitar_calidad');
+      }
+    }
+    return {
+      ok: true, semana: n, plan_km: sem.km, hecho_km: Math.round(km * 10) / 10, pct: pct,
+      sesiones: reg.length, tipos: tipos, cambios: cambios, razones: razones,
+      siguiente: sig ? { semana: sig.n, km: sig.km, descarga: !!sig.descarga, carrera: !!sig.carrera } : null
+    };
+  }
+
+  // Como se reparte una semana que se queda igual: si la larga no se hizo, el peso vuelve ahi.
+  function repartirSemana(id, n) {
+    var r = revisarSemana(id, n);
+    if (!r.ok) return r;
+    var a = atleta(id), sem = null;
+    a.semanas.forEach(function (s) { if (s.n === n) sem = s; });
+    var filas = (sem.filas || []).map(function (f) { return { tipo: f.tipo, km: f.km, min: f.min }; });
+    if (r.cambios.indexOf('quitar_calidad') >= 0) {
+      filas = filas.map(function (f) {
+        return f.tipo === 'calidad' ? { tipo: 'facil', km: f.km, min: f.min } : f;
+      });
+    }
+    if (r.cambios.indexOf('bajar_volumen') >= 0 || r.cambios.indexOf('repetir') >= 0) {
+      filas = filas.map(function (f) {
+        return { tipo: f.tipo, km: Math.round(f.km * 0.9 * 10) / 10, min: Math.max(15, Math.round(f.min * 0.9)) };
+      });
+    }
+    var total = 0;
+    filas.forEach(function (f) { total += f.km; });
+    return { ok: true, semana: n, cambios: r.cambios, razones: r.razones,
+             filas: filas, km: Math.round(total * 10) / 10 };
+  }
+
   /* ------------------------------------------------------------------- API */
   var Agente = {
 
@@ -868,6 +978,9 @@ function rellenar(plan, inicio) {
       var a = atleta(id);
       return { ok: true, fcmax: a.fcmax, fc_reposo: a.fc_reposo, modo: a.zonas.__modo || 'pct', zonas: a.zonas };
     },
+
+    revisarSemana: revisarSemana,
+    repartirSemana: repartirSemana,
 
     // Fuerza paso a paso: lo que la ficha resume en una linea y aqui se explica.
     // Dos sesiones alternas (A piernas, B estabilidad y core) y el aviso de cuando no se hace.

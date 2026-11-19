@@ -243,6 +243,7 @@
       </table>
     </div>
     <p class="peq" id="pTotal"></p>
+    <div class="card" id="pRevisar"></div>
   </section>
 
   <!-- REGISTRO -->
@@ -481,7 +482,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v40';
+  var APP_V = 'v41';
 (function () {
   'use strict';
   var A = window.Agente;
@@ -709,6 +710,23 @@
       (d.atleta.meta ? ' · meta ' + d.atleta.meta : '') +
       (d.atleta.carrera ? ' · carrera ' + fechaCorta(d.atleta.carrera) : '') +
       ' · el pulso manda, el ritmo es referencia.';
+    pintarRevision();
+  }
+
+  // Cada semana el plan se revisa con lo que de verdad se corrio. Si hay que mover algo,
+  // se dice aqui, con el numero en la mano; la app no cambia el plan sola.
+  function pintarRevision() {
+    var caja = $('#pRevisar');
+    if (!caja) return;
+    var nAct = A.semanaDe(A.hoy(), atleta);
+    var r = A.revisarSemana(atleta, nAct);
+    if (!r.ok) { caja.innerHTML = '<p class="peq">' + esc(r.error || 'sin revisión') + '</p>'; return; }
+    var etiquetas = { subir: 'Sube', dejar: 'Se queda igual', igual: 'Se queda igual',
+                      repetir: 'No sube', esperar: 'Sin sesiones', quitar_calidad: 'Sin calidad',
+                      bajar_volumen: 'Baja un poco' };
+    var chips = r.cambios.map(function (c) { return '<span class="chip">' + esc(etiquetas[c] || c) + '</span>'; }).join('');
+    caja.innerHTML = '<div class="fila"><h2 style="margin:0">Revisión de la semana ' + r.semana + '</h2>' + chips + '</div>' +
+      '<p class="peq" style="margin:6px 0 0">' + esc(r.razones.join(' ')) + '</p>';
   }
 
   // -------------------------------------------------------------- registro
