@@ -483,7 +483,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v48';
+  var APP_V = 'v49';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
@@ -529,7 +529,7 @@
   }
 
   function abrirAlta() {
-    verPlanNuevo();          // deja la hoja lista y la abre; el alta la vuelve a cerrar al guardar
+    abrirNuevo();            // limpia, deja la fecha de hoy y abre la hoja
     var n = $('#nuNombre');
     if (n) setTimeout(function () { n.focus(); }, 150);
   }
