@@ -318,6 +318,14 @@
     </div>
 
     <div class="card">
+      <h2>Salida al agente</h2>
+      <p class="peq" id="aSalida">–</p>
+      <p class="nota">Si aquí dice «sin enlace», esta copia no tiene a dónde mandar el registro.
+      Si dice «sin salida» al pedir análisis, el teléfono no alcanza la PC: revisa que Tailscale
+      esté encendido y sin ahorro de batería.</p>
+    </div>
+
+    <div class="card">
       <h2>Webhook del agente</h2>
       <p class="peq">Si tu agente vive en otro lado (tu Hermes, n8n), dale una URL https y recibe el
         estado en cada cambio.</p>
@@ -494,7 +502,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v57';
+  var APP_V = 'v58';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
@@ -977,6 +985,14 @@
   function pintarAgente() {
     var d = A.leer(atleta);
     $('#aEstado').innerHTML = 'atleta <b>' + esc(d.atleta.nombre) + '</b> · ' + d.registro.length + ' sesiones';
+    // Prueba de alcance sin mandar nada: sirve para saber si el enlace apunta a la PC correcta.
+    try {
+      var w = A.webhook();
+      var host = w ? String(w).replace(/^https?:\/\//, '').split('/')[0] : '';
+      $('#aSalida').innerHTML = w
+        ? 'Enlace: <b>' + esc(host) + '</b> · corredor <b>' + esc(atleta) + '</b> · ' + (A.estadoAviso().pendientes || 0) + ' aviso(s) en cola'
+        : 'sin enlace: a esta copia no le han pasado el enlace del coach.';
+    } catch (e) {}
     $('#aReg').innerHTML = ['atletas','leer','zonas','sesionDeHoy','registrar','borrar','ajustarSemana','exportar','importar','webhook']
       .map(function (f) { return '<span class="chip">Agente.' + f + '()</span>'; }).join('');
     $('#aDocs').textContent = A.docs();

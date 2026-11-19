@@ -1,7 +1,7 @@
 
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v57';
+  var APP_V = 'v58';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
@@ -484,6 +484,14 @@
   function pintarAgente() {
     var d = A.leer(atleta);
     $('#aEstado').innerHTML = 'atleta <b>' + esc(d.atleta.nombre) + '</b> · ' + d.registro.length + ' sesiones';
+    // Prueba de alcance sin mandar nada: sirve para saber si el enlace apunta a la PC correcta.
+    try {
+      var w = A.webhook();
+      var host = w ? String(w).replace(/^https?:\/\//, '').split('/')[0] : '';
+      $('#aSalida').innerHTML = w
+        ? 'Enlace: <b>' + esc(host) + '</b> · corredor <b>' + esc(atleta) + '</b> · ' + (A.estadoAviso().pendientes || 0) + ' aviso(s) en cola'
+        : 'sin enlace: a esta copia no le han pasado el enlace del coach.';
+    } catch (e) {}
     $('#aReg').innerHTML = ['atletas','leer','zonas','sesionDeHoy','registrar','borrar','ajustarSemana','exportar','importar','webhook']
       .map(function (f) { return '<span class="chip">Agente.' + f + '()</span>'; }).join('');
     $('#aDocs').textContent = A.docs();
