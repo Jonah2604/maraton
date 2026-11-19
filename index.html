@@ -483,7 +483,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v49';
+  var APP_V = 'v50';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
@@ -555,6 +555,9 @@
     Array.prototype.forEach.call(document.querySelectorAll('#atletas button'), function (b) {
       b.onclick = function () { atleta = b.dataset.at; guardarUI(); pintarTodo(); };
     });
+    // Sin coach propio no se ofrece la plantilla: el boton de al lado solo cambia entre lugares suyos.
+    var propio = (A.corredores().corredores || []).filter(function (a) { return !a.plantilla; });
+    if (!propio.length) return;
     // Con una sola tab hace falta una salida: el boton pasa al otro corredor.
     // Va despues del forEach, que si no le pisa el onclick con un data-at vacio.
     if (!dosAtletas && todos.length > 1) {
@@ -1092,7 +1095,7 @@
     }
     atleta = r.id;
     // Antes se encendia solo cada vez que habia dos corredores; ahora manda la preferencia.
-    guardarUI(); pintarAtletas(); pintarAjustes();
+    guardarUI(); pintarTodo(); pintarAjustes();
     $('#nuevo').classList.remove('abierta');
     $('#ajAviso').textContent = r.nombre + ' · ' + nombreMeta(r.objetivo || 'base') + ', ' +
       r.semanas_total + ' semanas desde el ' + fechaCorta(r.inicio);
