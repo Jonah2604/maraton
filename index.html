@@ -788,7 +788,7 @@
       p.then(function (j) {
         if (!j || !j.ok) return fallo((j && j.error) || 'la PC no contesto');
         var rec = j.recibido ? new Date(j.recibido).getTime() : 0;
-        var hecho = j.cuando ? new Date(j.cuando).getTime() : 0;
+        var hecho = j.t || 0;   // ms epoch del receptor: el mismo reloj que 'recibido'
         if (rec && hecho && hecho < rec - 1000 && intentos > 0) {
           return setTimeout(function () { traer(intentos - 1); }, 3000);
         }

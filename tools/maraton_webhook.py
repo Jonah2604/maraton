@@ -101,6 +101,12 @@ class Manejador(BaseHTTPRequestHandler):
             salida["recibido_sesiones"] = len(ultimo.get("sesiones") or [])
         except Exception:
             salida["recibido"] = None
+        # Los analisis viejos no traen 't': se deriva de 'cuando', que esta en hora local.
+        if not salida.get("t") and salida.get("cuando"):
+            try:
+                salida["t"] = int(time.mktime(time.strptime(salida["cuando"], "%Y-%m-%dT%H:%M:%S")) * 1000)
+            except Exception:
+                pass
         return self._responder(200, salida)
 
     def do_POST(self):
@@ -189,7 +195,9 @@ def analizar(atleta: str, datos: dict) -> bool:
         return False
     if isinstance(dato, list):
         dato = dato[0] if dato else {}
-    salida = {"ok": True, "cuando": time.strftime("%Y-%m-%dT%H:%M:%S"), "atleta": atleta,
+    salida = {"ok": True, "cuando": time.strftime("%Y-%m-%dT%H:%M:%S"),
+              "t": int(time.time() * 1000),   # ms epoch: para comparar sin lios de zona
+              "atleta": atleta,
               "semana": dato.get("semana"), "fechas": dato.get("fechas"),
               "plan": dato.get("plan"), "km": dato.get("km"), "pct": dato.get("pct"),
               "faltan": dato.get("faltan"), "banderas": dato.get("banderas"),
