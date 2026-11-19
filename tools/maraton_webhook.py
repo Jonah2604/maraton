@@ -90,9 +90,18 @@ class Manejador(BaseHTTPRequestHandler):
             return self._responder(200, {"ok": False, "pendiente": True,
                                          "error": "todavia no hay analisis para " + atleta})
         try:
-            return self._responder(200, json.loads(archivo.read_text(encoding="utf-8")))
+            salida = json.loads(archivo.read_text(encoding="utf-8"))
         except Exception:
             return self._responder(500, {"ok": False, "error": "feedback ilegible"})
+        # Cuando entro el ultimo aviso de la app. Sirve para que el telefono pueda comprobar
+        # que su envio llego aunque el navegador no lo deje leer la respuesta del POST.
+        try:
+            ultimo = json.loads((CACHE / "ultimo.json").read_text(encoding="utf-8"))
+            salida["recibido"] = ultimo.get("cuando") or None
+            salida["recibido_sesiones"] = len(ultimo.get("sesiones") or [])
+        except Exception:
+            salida["recibido"] = None
+        return self._responder(200, salida)
 
     def do_POST(self):
         # Detras de tailscale serve el prefijo /maraton se conserva: se acepta con o sin el.

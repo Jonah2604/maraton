@@ -768,31 +768,41 @@
   function pedirFeedback() {
     var btn = $('#bFb');
     if (btn) { btn.disabled = true; btn.textContent = 'Calculando…'; }
-    var listo = function (j) {
-      pintarFeedbackCoach(j);
-      if (btn) { btn.disabled = false; btn.textContent = '↻ Pedir análisis'; }
+    var suelta = function () { if (btn) { btn.disabled = false; btn.textContent = '↻ Pedir análisis'; } };
+    var fallo = function (t) { pintarFeedbackError(t); suelta(); };
+    // El analisis lo hace la PC con lo que le llego. Si el aviso de hoy no ha entrado, pedirlo
+    // devuelve el de la vez pasada y parece que el corredor no subio nada: primero se confirma
+    // que el aviso llego y luego se pide, repitiendo hasta que el analisis sea posterior al aviso.
+    var esperar = function (intentos) {
+      var e = (A.estadoAviso && A.estadoAviso()) || {};
+      var u = e.ultimoAviso || null;
+      var reciente = u && u.cuando && (Date.now() - new Date(u.cuando).getTime()) < 60000;
+      if (u && reciente && u.ok) return traer(4);
+      if (u && reciente && !u.ok) return fallo('no se pudo mandar el registro a la PC: ' + (u.fallo || 'sin salida'));
+      if (intentos <= 0) return fallo('la PC no confirmo el aviso; revisa que Tailscale este prendido');
+      setTimeout(function () { esperar(intentos - 1); }, 1200);
     };
-    try {
-      // Primero se le manda a la PC lo que la app tiene ahora: el analisis se calcula
-      // sobre lo que llega, no sobre lo que llego la ultima vez. Solo cuando el aviso
-      // entra se pide el analisis; si no entra, se dice por que y no se pinta uno viejo.
-      var esperar = function (intentos) {
-        var e = (A.estadoAviso && A.estadoAviso()) || {};
-        var u = e.ultimoAviso || null;
-        var reciente = u && u.cuando && (Date.now() - new Date(u.cuando).getTime()) < 20000;
-        if (u && reciente && u.ok) {
-          var p = A.feedback(atleta);
-          if (p && p.then) p.then(listo); else listo({ ok: false, error: 'sin respuesta' });
-          return;
+    var traer = function (intentos) {
+      var p = A.feedback(atleta);
+      if (!p || !p.then) return fallo('sin respuesta de la PC');
+      p.then(function (j) {
+        if (!j || !j.ok) return fallo((j && j.error) || 'la PC no contesto');
+        var rec = j.recibido ? new Date(j.recibido).getTime() : 0;
+        var hecho = j.cuando ? new Date(j.cuando).getTime() : 0;
+        if (rec && hecho && hecho < rec - 1000 && intentos > 0) {
+          return setTimeout(function () { traer(intentos - 1); }, 3000);
         }
-        if (u && reciente && !u.ok) {
-          return listo({ ok: false, error: 'no se pudo mandar a la PC: ' + (u.fallo || 'sin salida') });
-        }
-        if (intentos <= 0) return listo({ ok: false, error: 'la PC no confirmo el aviso; revisa que Tailscale este prendido' });
-        setTimeout(function () { esperar(intentos - 1); }, 1200);
-      };
-      esperar(10);
-    } catch (x) { listo({ ok: false, error: 'no se pudo pedir' }); }
+        pintarFeedbackCoach(j);
+        suelta();
+      }).catch(function () { fallo('no se pudo traer el analisis'); });
+    };
+    try { esperar(20); } catch (x) { fallo('no se pudo pedir'); }
+  }
+
+  function pintarFeedbackError(t) {
+    var caja = $('#fbTexto'), cuando = $('#fbCuado');
+    if (cuando) cuando.textContent = t;
+    if (caja) caja.innerHTML = '';
   }
 
   function pintarReg() {

@@ -1600,13 +1600,39 @@ function rellenar(plan, inicio) {
       } catch (x) {}
     };
     // El envio va dentro de su propio try: si algo de esto truena, el aviso ya quedo en cola.
+    // Si el navegador no deja leer la respuesta del POST (CORS, proxy, keepalive) el aviso
+    // puede haber entrado igual: se pregunta al receptor cuando recibio el ultimo aviso y se
+    // compara con la hora a la que salio este. Sin esto la app decia "no llego" con el aviso ya
+    // guardado en la PC, y el corredor veia un analisis viejo sin saber por que.
+    var sello = new Date().toISOString();
+    var comprobar = function (status) {
+      var m = /\/hook\/([^\/?#]+)/.exec(url);
+      if (!m) return apuntar(false, status || 0, 'la URL no tiene /hook/<secreto>');
+      var base = url.slice(0, url.indexOf('/hook/'));
+      var quien = 'jonah';
+      try {
+        var ec = cargar();
+        quien = (ec.ultimoAtleta) || (ec.pendientes && ec.pendientes.length
+                 ? ec.pendientes[ec.pendientes.length - 1].atleta : 'jonah');
+      } catch (x) {}
+      var destino = base + '/feedback/' + m[1] + '/' + encodeURIComponent(quien) + '?t=' + Date.now();
+      fetch(destino, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
+        var recibido = j && j.recibido ? new Date(j.recibido).getTime() : 0;
+        var salio = new Date(sello).getTime();
+        if (recibido && salio && recibido >= salio - 90000) return apuntar(true, status || 200);
+        apuntar(false, status || 0, 'la PC no registro el aviso');
+      }).catch(function () {
+        apuntar(false, status || 0, 'sin salida al agente');
+      });
+    };
     var intento = function () {
       fetch(url, opciones).then(function (r) {
         if (r && r.ok) { apuntar(true, r.status); return; }
-        apuntar(false, r ? r.status : 0, 'el receptor contesto ' + (r ? r.status : '?'));
+        respaldo();
+        comprobar(r ? r.status : 0);
       }).catch(function (err) {
         respaldo();
-        apuntar(false, 0, 'sin salida al agente (' + ((err && err.message) || 'red') + ')');
+        comprobar(0);
       });
     };
     try { intento(); } catch (x) {}
