@@ -481,7 +481,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v37';
+  var APP_V = 'v38';
 (function () {
   'use strict';
   var A = window.Agente;
@@ -1682,6 +1682,18 @@
   if (/[#&]agent=/.test(location.hash)) {
     try { A.aplicarHash(); } catch (e) {}
   }
+  // #r=<direccion del receptor>: deja configurado el telefono sin teclear la direccion a mano.
+  // Va en el hash, que no se manda al servidor, y se borra en cuanto se guarda.
+  (function () {
+    var m = /[#&]r=([^&]+)/.exec(location.hash || '');
+    if (!m) return;
+    var url = '';
+    try { url = decodeURIComponent(m[1]); } catch (e) { url = m[1]; }
+    var r = A.webhook(url);
+    if (r && r.ok) {
+      try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+    }
+  })();
   pintarTodo();
 
   // El puente avisa cuando aplica un #agent=... y cuando algo cambia desde fuera.
