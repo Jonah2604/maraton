@@ -1,0 +1,1396 @@
+
+
+  // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
+  var APP_V = 'v56';
+
+  /* ============================================================ plan sin coach
+     Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
+     un modelo del navegador (`Agente.planIASiguiente`), con su llave y su cuenta, y no la PC de Jonah.
+     La app de Jonah y Yuli NO usa esto: esas dos siguen con el analisis de la PC, que lee el historial
+     completo y las sesiones reales.
+
+     Reglas que la app impone al modelo, aunque el modelo quiera otra cosa:
+       - no sube el volumen mas de 20 % respecto a la semana anterior cumplida;
+       - si la semana paso del 90 % de pulso maximo, la siguiente no sube;
+       - con molestia anotada, la semana siguiente se queda igual o baja, sin calidad;
+       - nunca pasa los topes de larga de la distancia elegida;
+       - la semana de la carrera no se toca;
+       - si el modelo regresa algo raro (sin semanas, km absurdos, tipos inventados), no se usa. */
+(function () {
+  'use strict';
+  var A = window.Agente;
+  var UI = 'maraton.ui.v1';
+  var atleta = 'jonah';
+  var vista = 'Hoy';
+  var tipoImp = 'facil', impActual = null;
+
+  function $(s) { return document.querySelector(s); }
+  // nombre legible de cada tipo de sesion (las fichas y el alta usan el mismo)
+  function nombreTipo(t) {
+    return { larga: 'Larga', calidad: 'Calidad', facil: 'Fácil', regenerativo: 'Regenerativo',
+             fuerza: 'Fuerza', descanso: 'Descanso', carrera: 'Carrera', bici: 'Bici' }[t] || t;
+  }
+
+  function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, function (c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function fechaCorta(iso) {
+    var p = String(iso || '').split('-');
+    return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : '';
+  }
+
+  // Si la app viene en blanco (nadie la ha usado en este telefono), no se inventa un corredor de ejemplo:
+  // se abre el formulario y se pregunta lo minimo. Los lugares de la plantilla no se pintan vacios.
+  function vieneEnBlanco() {
+    // Ojo: la plantilla (Jonah, Yuli) trae plan pero no cuenta como uso. La copia esta en blanco
+    // solo si nadie ha registrado nada y nadie ha creado su propio corredor.
+    var c = (A.corredores().corredores || []);
+    var usados = c.filter(function (a) { return !a.plantilla || (a.registros || 0) > 0; });
+    return usados.length === 0;
+  }
+
+  function abrirAlta() {
+    abrirNuevo();            // limpia, deja la fecha de hoy y abre la hoja
+    var n = $('#nuNombre');
+    if (n) setTimeout(function () { n.focus(); }, 150);
+  }
+
+  // ---------------------------------------------------------------- atletas
+  // La barra muestra uno o dos lugares segun el ajuste; el nombre sale del perfil guardado.
+  // Un solo lugar en la barra: cada quien ve lo suyo y cambia con el boton de al lado.
+  var dosAtletas = false;
+
+  function pintarAtletas() {
+    var todos = A.corredores().corredores;
+    // En blanco no se pinta un lugar de la plantilla: no habria nombre ni plan que mostrar.
+    var lista = todos.filter(function (a) { return !a.plantilla || !vieneEnBlanco(); });
+    if (!dosAtletas) {
+      var solo = lista.filter(function (a) { return a.id === atleta; });
+      lista = solo.length ? solo : lista.slice(0, 1);
+      if (lista.length) atleta = lista[0].id;
+    }
+    $('#atletas').innerHTML = lista.map(function (a) {
+      return '<button data-at="' + a.id + '" class="' + (a.id === atleta ? 'on' : '') + '">' +
+             esc(a.nombre || a.id) + ' · FC ' + (a.fcmax || '—') + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(document.querySelectorAll('#atletas button'), function (b) {
+      b.onclick = function () { atleta = b.dataset.at; guardarUI(); pintarTodo(); };
+    });
+    // Sin coach propio no se ofrece la plantilla: el boton de al lado solo cambia entre lugares suyos.
+    var propio = (A.corredores().corredores || []).filter(function (a) { return !a.plantilla; });
+    if (!propio.length) return;
+    // Con una sola tab hace falta una salida: el boton pasa al otro corredor.
+    // Va despues del forEach, que si no le pisa el onclick con un data-at vacio.
+    if (!dosAtletas && todos.length > 1) {
+      var i = 0, j;
+      for (j = 0; j < todos.length; j++) if (todos[j].id === atleta) i = j;
+      var otro = todos[(i + 1) % todos.length];
+      var cambiar = document.createElement('button');
+      cambiar.textContent = '⇄ ' + (otro.nombre || otro.id);
+      cambiar.onclick = function () { atleta = otro.id; guardarUI(); pintarTodo(); };
+      $('#atletas').appendChild(cambiar);
+    }
+  }
+
+  function guardarUI() {
+    try { localStorage.setItem(UI, JSON.stringify({ atleta: atleta, vista: vista, dos: dosAtletas })); } catch (e) {}
+  }
+  function cargarUI() {
+    try {
+      var o = JSON.parse(localStorage.getItem(UI) || '{}');
+      if (o.atleta && typeof o.atleta === 'string' && A.corredores().corredores.some(function (c) { return c.id === o.atleta; })) atleta = o.atleta;
+      if (o.vista && ['Hoy','Plan','Reg','Agente'].indexOf(o.vista) >= 0) vista = o.vista;
+      if (o.dos === false) dosAtletas = false;
+    } catch (e) {}
+  }
+
+  // ------------------------------------------------------------------- hoy
+  // Dias de la semana que se esta viendo (el plan dice que toca; el dia solo elige cual mirar).
+  var diaSel = null;   // null = hoy
+  function diaActivo() {
+    if (!diaSel) return A.hoy();
+    return diaSel;
+  }
+  function pintarDias() {
+    var hoy = A.hoy();
+    var fecha = diaActivo();
+    // los siete dias de esa semana se calculan desde el lunes
+    var f0 = new Date(fecha + 'T12:00:00');
+    var dow = (f0.getDay() + 6) % 7;         // lunes = 0
+    f0.setDate(f0.getDate() - dow);
+    var reg = A.leer(atleta).registro, hechos = {};
+    reg.forEach(function (r) { hechos[r.fecha] = true; });
+    var cls = ['L','M','M','J','V','S','D'], html = '';
+    for (var i = 0; i < 7; i++) {
+      var d = new Date(f0.getTime() + i * 86400000);
+      var iso = A.iso(d);
+      html += '<button data-dia="' + iso + '" class="' + (iso === fecha ? 'on ' : '') +
+              (iso === hoy ? 'hoy' : '') + '" title="' + iso + '"><b>' + d.getDate() + '</b>' + cls[i] +
+              (hechos[iso] ? '<span class="pt"></span>' : '') + '</button>';
+    }
+    $('#hDias').innerHTML = html;
+    Array.prototype.forEach.call(document.querySelectorAll('#hDias button'), function (b) {
+      b.onclick = function () { diaSel = (b.dataset.dia === A.hoy()) ? null : b.dataset.dia; pintarHoy(); };
+    });
+  }
+
+  // Campo libre: lo que el corredor escribe y el coach tiene que leer antes de mover la semana.
+  function pintarNotas() {
+    var r = A.leerNotas(atleta);
+    var lista = (r && r.ok) ? r.notas.slice().reverse() : [];
+    var box = $('#ntLista');
+    if (!box) return;
+    if (!lista.length) { box.innerHTML = '<p class="peq">Sin notas todavía.</p>'; return; }
+    box.innerHTML = lista.slice(0, 5).map(function (n) {
+      var d = n.dias_bloqueados && n.dias_bloqueados.length
+        ? ' · no entrena: ' + n.dias_bloqueados.map(function (i) { return ['lun','mar','mié','jue','vie','sáb','dom'][i - 1]; }).join(', ')
+        : '';
+      return '<div class="sesion" style="margin-top:6px">' +
+             '<div class="t">' + esc(n.fecha.split('-').reverse().join('/')) + ' · semana ' + esc(n.semana) +
+             '<button class="bt mini" data-borranota="' + esc(n.fecha) + '">Quitar</button></div>' +
+             '<div class="d">' + esc(n.texto) + d + '</div></div>';
+    }).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('[data-borranota]'), function (b2) {
+      b2.onclick = function () {
+        A.borrarNota(atleta, b2.dataset.borranota);
+        $('#ntAviso').textContent = 'Nota quitada.';
+        pintarNotas();
+      };
+    });
+  }
+
+  function guardarNotaUI() {
+    var t = $('#ntTexto').value.trim();
+    if (!t) { $('#ntAviso').textContent = 'Escribe algo primero.'; return; }
+    var r = A.nota(atleta, t, $('#ntTipo').value);
+    if (!r.ok) { $('#ntAviso').textContent = r.error; return; }
+    $('#ntTexto').value = '';
+    var av = 'Guardada. Tu coach la va a leer antes de mover la semana.';
+    if (r.sugerencia) av += ' ' + r.sugerencia;
+    else if (r.nota.dias_bloqueados.length) av += ' Esos días no se programan.';
+    $('#ntAviso').textContent = av;
+    pintarNotas();
+  }
+
+  function pintarHoy() {
+    pintarDias();
+    pintarNotas();
+    var d = A.leer(atleta), h = A.sesionDeHoy(atleta, diaActivo()), f = h.fila;
+    $('#hNombre').textContent = d.atleta.nombre;
+    $('#hFcmax').textContent = d.atleta.fcmax;
+    $('#mCarrera').textContent = d.atleta.carrera ? ('· ' + fechaCorta(d.atleta.carrera)) : '· sin carrera';
+    $('#hNum').textContent = h.semana;
+    var tTot = $('#hTotal');
+    if (tTot) tTot.textContent = A.leer(atleta).semanas.length;
+    $('#hFechas').textContent = f.fechas;
+    if ($('#hDiaSel')) $('#hDiaSel').textContent = diaSel ? (' · viendo ' + diaSel.split('-').reverse().join('/')) : '';
+    $('#hKm').textContent = f.km;
+    $('#hLarga').textContent = f.larga;
+    $('#hNota').textContent = f.nota || '';
+
+    var hechas = {};
+    h.registradas.forEach(function (r) { hechas[r.tipo] = r; });
+    $('#hRestan').innerHTML = h.pendientes.length ?
+      '<b>' + h.pendientes.length + '</b> pendientes' : '<b>Semana completa</b> ✅';
+
+    var cal = hechas.calidad, lar = hechas.larga, fac = hechas.facil;
+    $('#hSesiones').innerHTML =
+      '  <div class="sesion cal ' + (cal ? 'hecha' : '') + '" data-ficha="calidad">' +
+      '    <div class="t">Calidad' + (cal ? ' ✅' : '') +
+      '      <button class="bt mini" data-reg="calidad">' + (cal ? 'Otra' : 'Hacer') + '</button></div>' +
+      '    <div class="d">' + esc(f.calidad) + ' · con fuerza 15-20 min al final</div></div>' +
+      '  <div class="sesion lar ' + (lar ? 'hecha' : '') + '" data-ficha="larga">' +
+      '    <div class="t">Larga · ' + f.larga + ' km' + (lar ? ' ✅' : '') +
+      '      <button class="bt mini" data-reg="larga" data-km="' + f.larga + '">' + (lar ? 'Otra' : 'Hacer') + '</button></div>' +
+      '    <div class="d">Z2 · si el terreno trae cuestas, se camina la subida</div></div>';
+
+    $('#hFacil').className = 'sesion fac' + (fac ? ' hecha' : '');
+    $('#hFacil').querySelector('.t').firstChild.nodeValue = 'Fácil' + (fac ? ' ✅' : '');
+    $('#hFacil').querySelector('button').textContent = fac ? 'Otra' : 'Hacer';
+
+    var z = d.atleta.zonas, filas = '';
+    ['Z1','Z2','Z3','Z4','Z5'].forEach(function (k) {
+      filas += '<div class="zbox ' + (k === 'Z2' ? 'z2' : '') + '"><div class="k">' + k +
+               '</div><div class="v">' + z[k][0] + '-' + z[k][1] + '</div></div>';
+    });
+    $('#hZonas').innerHTML = filas;
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-reg]'), function (b) {
+      b.onclick = function (ev) {
+        ev.stopPropagation();
+        abrirRegistro(b.dataset.reg, b.dataset.km);
+      };
+    });
+
+    // Tocar la tarjeta (fuera del boton) abre la ficha de esa sesion.
+    Array.prototype.forEach.call(document.querySelectorAll('[data-ficha]'), function (el) {
+      el.onclick = function (ev) {
+        if (ev.target.closest('[data-reg]')) return;
+        abrirFicha(el.dataset.ficha);
+      };
+    });
+  }
+
+  // ------------------------------------------------------------------ plan
+  function pintarPlan() {
+    var d = A.leer(atleta), actual = A.semanaDe(A.hoy(), atleta);
+    $('#pFilas').innerHTML = d.semanas.map(function (s) {
+      var desc = [4, 8, 12, 16, 19].indexOf(s.n) >= 0;
+      return '<tr class="' + (s.n === actual ? 'actual' : (desc ? 'desc' : '')) + '" data-w="' + s.n + '">' +
+        '<td>' + s.n + '</td><td>' + esc(s.fechas) + '</td>' +
+        '<td class="num">' + s.km + '</td><td class="num">' + s.larga + '</td>' +
+        '<td>' + esc(s.calidad) + '</td></tr>';
+    }).join('');
+    // Tocar una semana lleva a su lunes en la pestaña Hoy.
+    Array.prototype.forEach.call(document.querySelectorAll('#pFilas tr'), function (tr) {
+      tr.onclick = function () {
+        var n = Number(tr.dataset.w);
+        var lunes = new Date(Date.UTC(2026, 10, 9) + (n - 1) * 7 * 86400000);
+        // Si la semana elegida es la de hoy, se queda en el dia de hoy; si no, abre su lunes.
+        diaSel = (n === A.semanaDe(A.hoy(), atleta)) ? null : A.iso(lunes);
+        vista = 'Hoy'; guardarUI(); pintarTodo();
+        window.scrollTo(0, 0);
+      };
+    });
+    var suma = d.semanas.reduce(function (a, s) { return a + (s.km || 0); }, 0);
+    // El tope sale del plan, no del 21 de la plantilla: un plan reajustado tiene otras semanas.
+    var total = d.semanas.length;
+    var entreno = d.semanas.filter(function (s) { return s.n < total; })
+                           .reduce(function (a, s) { return a + (s.km || 0); }, 0);
+    var carrera = d.semanas.filter(function (s) { return s.n === total; })
+                           .reduce(function (a, s) { return a + (s.km || 0); }, 0);
+    $('#pTotal').textContent = 'Entrenamiento ' + Math.round(entreno) + ' km + carrera ' +
+      (carrera % 1 ? carrera.toFixed(1) : Math.round(carrera)) + ' km = ' + suma.toFixed(1).replace('.0','') + ' km' +
+      (d.atleta.meta ? ' · meta ' + d.atleta.meta : '') +
+      (d.atleta.carrera ? ' · carrera ' + fechaCorta(d.atleta.carrera) : '') +
+      ' · el pulso manda, el ritmo es referencia.';
+    pintarRevision();
+  }
+
+  // Cada semana el plan se revisa con lo que de verdad se corrio. Si hay que mover algo,
+  // se dice aqui, con el numero en la mano; la app no cambia el plan sola.
+  function pintarRevision() {
+    var caja = $('#pRevisar');
+    if (!caja) return;
+    var nAct = A.semanaDe(A.hoy(), atleta);
+    var r = A.revisarSemana(atleta, nAct);
+    if (!r.ok) { caja.innerHTML = '<p class="peq">' + esc(r.error || 'sin revisión') + '</p>'; return; }
+    var etiquetas = { subir: 'Sube', dejar: 'Se queda igual', igual: 'Se queda igual',
+                      repetir: 'No sube', esperar: 'Sin sesiones', quitar_calidad: 'Sin calidad',
+                      bajar_volumen: 'Baja un poco' };
+    var chips = r.cambios.map(function (c) { return '<span class="chip">' + esc(etiquetas[c] || c) + '</span>'; }).join('');
+    caja.innerHTML = '<div class="fila"><h2 style="margin:0">Revisión de la semana ' + r.semana + '</h2>' + chips + '</div>' +
+      '<p class="peq" style="margin:6px 0 0">' + esc(r.razones.join(' ')) + '</p>' + cajaModelo();
+    engancharModelo();
+  }
+
+  // Sin coach en casa, el plan lo puede mover un modelo al que la persona le pone su cuenta.
+  // La llave vive en este telefono y sólo viaja al endpoint del modelo; la pantalla no la muestra.
+  function cajaModelo() {
+    var tiene = !!A.iaLlave();
+    var prov = A.iaProveedor();
+    var P = A.proveedores[prov] || A.proveedores.openai;
+    var opciones = Object.keys(A.proveedores).map(function (k) {
+      var p = A.proveedores[k];
+      return '<option value="' + k + '"' + (k === prov ? ' selected' : '') + '>' + esc(p.nombre) + '</option>';
+    }).join('');
+    var sinPagar = prov === 'gemini' || prov === 'groq';
+    return '<details class="peq" style="margin-top:10px">' +
+      '<summary>Plan con un modelo en la nube' + (tiene ? ' · conectado' : '') + '</summary>' +
+      '<p style="margin:8px 0 4px">' + esc(tiene
+        ? 'Listo. La app le pregunta a tu modelo si la próxima semana sube o se queda, y te lo enseña antes de tocar nada.'
+        : 'Si no tienes a nadie que te ajuste el plan, pon aquí la llave de tu cuenta. La app sólo manda las sesiones de esa semana, sin tu nombre.') + '</p>' +
+      '<div class="fila" style="margin-bottom:6px"><select id="iaProv">' + opciones + '</select>' +
+      '<input id="iaModelo" placeholder="' + esc(P.modelo) + '" value="' + esc(A.iaModelo() || '') + '"></div>' +
+      '<div class="fila"><input id="iaLlave" type="password" placeholder="' + esc(P.llave) + '" autocomplete="off">' +
+      '<button id="iaGuardar">' + (tiene ? 'Cambiar' : 'Guardar') + '</button></div>' +
+      '<p class="peq" style="margin:6px 0 0">' + (sinPagar
+        ? 'Con éste no hace falta pagar: ' + (prov === 'gemini'
+            ? 'la llave sale gratis en <b>aistudio.google.com/apikey</b> con tu cuenta de Google.'
+            : 'la llave sale gratis en <b>console.groq.com/keys</b>, sin tarjeta.')
+        : prov === 'openai'
+          ? 'De paga: se paga por uso (unos cuantos centavos por consulta) y la llave sale en <b>platform.openai.com/api-keys</b>. Si no quieres pagar, elige Gemini o Groq.'
+          : 'Para un servidor propio o compatible con OpenAI: pon la dirección de <b>chat/completions</b> en el campo de arriba.') + '</p>' +
+      '<p class="peq" id="iaAviso" style="margin:6px 0 0"></p></details>';
+  }
+
+  function engancharModelo() {
+    var b = $('#iaGuardar');
+    if (!b || b.dataset.listo) return;
+    b.dataset.listo = '1';
+    var sel = $('#iaProv');
+    if (sel) sel.onchange = function () {
+      A.iaProveedor(sel.value);
+      var P = A.proveedores[sel.value] || {};
+      var m = $('#iaModelo');
+      if (m) m.placeholder = P.modelo || '';
+      pintarRevision();       // redibuja la caja con el aviso del proveedor elegido
+    };
+    b.onclick = function () {
+      var campo = $('#iaLlave'), k = (campo || {}).value || '';
+      if (A.iaProveedor() !== 'openai' && /^sk-/.test(k)) {
+        var av0 = $('#iaAviso');
+        if (av0) av0.textContent = 'Esa llave parece de OpenAI; elige OpenAI arriba o pega la del proveedor elegido.';
+        return;
+      }
+      A.iaLlave(k);
+      A.iaModelo(($('#iaModelo') || {}).value || '');
+      var av = $('#iaAviso');
+      if (av) av.textContent = k ? 'Guardada. No se muestra en pantalla ni se manda a nadie más.'
+                                 : 'Sin llave: el plan queda como está.';
+      if (campo && k) campo.value = '';
+    };
+  }
+
+  // -------------------------------------------------------------- registro
+  function pintarFeedback() {
+    var b = A.balance(atleta);
+    if (!b.ok) { $('#fTxt').textContent = b.error; return; }
+    $('#fSem').textContent = 'Semana ' + b.semana + ' de ' + (b.total || 21);
+    var kmPlan = b.fila ? b.fila.km : null;
+    function ritmoTxt(m) { if (!m) return '–'; var mm = Math.floor(m), ss = Math.round((m - mm) * 60); return mm + ':' + (ss < 10 ? '0' : '') + ss; }
+    $('#fChips').innerHTML =
+      '<span class="chip">Km <b>' + b.kmHechos.toFixed(1) + '</b>' + (kmPlan != null ? ' / ' + kmPlan : '') + '</span>' +
+      '<span class="chip">Ritmo <b>' + ritmoTxt(b.ritmo) + '</b>/km</span>' +
+      '<span class="chip">Horas <b>' + b.horasHechas.toFixed(1) + '</b></span>';
+    var lineas = [];
+    if (b.deltaSeg != null) lineas.push(b.deltaSeg < 0
+      ? 'Vas ' + Math.abs(b.deltaSeg) + ' s/km más rápido que la semana pasada (' + ritmoTxt(b.ritmoPrev) + ' → ' + ritmoTxt(b.ritmo) + ').'
+      : 'Vas ' + b.deltaSeg + ' s/km más lento que la semana pasada (' + ritmoTxt(b.ritmoPrev) + ' → ' + ritmoTxt(b.ritmo) + ').');
+    else if (b.ritmo) lineas.push('Ritmo medio de la semana: ' + ritmoTxt(b.ritmo) + '/km.');
+    if (b.previa && b.previa.length) lineas.push('Semana pasada: ' + b.kmPrevios.toFixed(1) + ' km en ' + b.previa.length + ' sesiones.');
+    else lineas.push('Sin sesiones la semana pasada: esta es la primera referencia.');
+    $('#fTxt').textContent = lineas.join(' ');
+    var av = b.avisos.slice();
+    var lineaTipos = b.pendientes.length
+      ? (b.pendientesTexto ? null : 'Pendiente: ' + b.pendientes.join(', ') + '.')
+      : (b.dudosas && b.dudosas.length ? 'Los tipos están cubiertos, pero revisa la sesión dudosa de arriba.'
+                                        : 'Las tres de la semana están hechas.');
+    if (lineaTipos) av.push(lineaTipos);
+    if (b.proxima) av.push('Siguiente (' + b.proxima.fechas + '): ' + b.proxima.km + ' km, larga de ' + b.proxima.larga + ' km.');
+    $('#fAvisos').innerHTML = av.map(function (t) { return '<div class="peq">• ' + esc(t) + '</div>'; }).join('');
+  }
+
+  // El analisis que contesta la PC. Se pinta aqui y no se manda al chat: el corredor
+  // no tiene por que salir de la app para saber como va.
+  function pintarFeedbackCoach(j) {
+    var caja = $('#fbTexto'), cuando = $('#fbCuado');
+    if (!j) { caja.innerHTML = ''; cuando.textContent = ''; return; }
+    if (j.pendiente) {
+      cuando.textContent = 'Todavía sin análisis: registra una sesión y se calcula solo.';
+      caja.innerHTML = '';
+      return;
+    }
+    if (!j.ok) {
+      cuando.textContent = j.error || 'No se pudo leer el análisis.';
+      caja.innerHTML = '';
+      return;
+    }
+    cuando.textContent = 'Actualizado ' + (j.cuando || '').replace('T', ' ').slice(0, 16) +
+                         (j.semana ? ' · semana ' + j.semana : '');
+    var out = [];
+    if (j.plan) out.push('<div class="peq"><b>Plan:</b> ' + esc(String(j.plan.km)) + ' km, larga ' +
+      esc(String(j.plan.larga)) + ' km · ' + esc(String(j.plan.calidad || '')) + '</div>');
+    out.push('<div class="peq"><b>Hecho:</b> ' + esc(String(j.km)) + ' km (' + esc(String(j.pct)) +
+             '% del plan)' + (j.faltan && j.faltan.length ? ' · falta ' + esc(j.faltan.join(', ')) : '') + '</div>');
+    (j.banderas || []).forEach(function (b) { out.push('<div class="peq">• ' + esc(b) + '</div>'); });
+    if (j.siguiente) out.push('<div class="peq">Siguiente: semana ' + esc(String(j.siguiente)) +
+      (j.cambios && j.cambios.km ? ' · ' + esc(String(j.cambios.km)) + ' km, larga ' + esc(String(j.cambios.larga)) : '') + '</div>');
+    caja.innerHTML = out.join('');
+  }
+
+  function pedirFeedback() {
+    var btn = $('#bFb');
+    var ver = (typeof APP_V !== 'undefined') ? APP_V : '?';
+    if (btn) { btn.disabled = true; btn.textContent = 'Calculando…'; }
+    var suelta = function () { if (btn) { btn.disabled = false; btn.textContent = '↻ Pedir análisis'; } };
+    var fallo = function (t) { pintarFeedbackError(t + ' (' + ver + ')'); suelta(); };
+    // Se compara el aviso contra el que había al pulsar, no contra el reloj: el envío puede
+    // tardar y el reloj del teléfono no es el de la PC.
+    var huella = function (u) { return u ? [u.cuando, u.ok, u.fallo || '', u.codigo || 0].join('|') : 'nada'; };
+    var antes = huella((A.estadoAviso() || {}).ultimoAviso);
+    var traer = function (intentos) {
+      var p = A.feedback(atleta);
+      if (!p || !p.then) return fallo('sin respuesta de la PC');
+      p.then(function (j) {
+        if (!j || !j.ok) return fallo((j && j.error) || 'la PC no contestó');
+        var rec = j.recibido ? new Date(j.recibido).getTime() : 0;
+        var hecho = j.t || 0;
+        if (rec && hecho && hecho < rec - 1000 && intentos > 0) {
+          return setTimeout(function () { traer(intentos - 1); }, 3000);
+        }
+        pintarFeedbackCoach(j); suelta();
+      }).catch(function () { fallo('no se pudo traer el análisis'); });
+    };
+    var esperar = function (intentos) {
+      var u = (A.estadoAviso() || {}).ultimoAviso || null;
+      if (huella(u) !== antes) {
+        if (u && u.ok) return traer(4);
+        return fallo('no se pudo mandar el registro a la PC: ' + ((u && u.fallo) || 'sin salida'));
+      }
+      if (intentos <= 0) return fallo('la PC no confirmó el aviso; revisa que Tailscale esté prendido');
+      setTimeout(function () { esperar(intentos - 1); }, 1000);
+    };
+    if (!A.webhook()) return fallo('falta la dirección del receptor');
+    A.reenviar(true);   // manda lo que tiene la app ahora mismo, no lo que quedó de la última vez
+    esperar(25);
+  }
+
+  function pintarFeedbackError(t) {
+    var caja = $('#fbTexto'), cuando = $('#fbCuado');
+    if (cuando) cuando.textContent = t;
+    if (caja) caja.innerHTML = '';
+  }
+
+  function pintarReg() {
+    var d = A.leer(atleta), reg = d.registro.slice().reverse();
+    pintarFeedback();
+    if (!reg.length) {
+      $('#rLista').innerHTML = '<p class="peq">Todavía no hay sesiones anotadas. Usa «+ Sesión».</p>';
+    } else {
+      $('#rLista').innerHTML = reg.map(function (r) {
+        return '<div class="sesion ' + (r.tipo === 'calidad' ? 'cal' : r.tipo === 'larga' ? 'lar' : 'fac') + '">' +
+          '<div class="t">' + esc(r.fecha) + ' · ' + esc(r.tipo) +
+          (r.zona ? ' · ' + esc(r.zona) : '') +
+          ' <button class="bt mini" data-del="' + esc(r.fecha) + '|' + esc(r.tipo) + '">✕</button></div>' +
+          '<div class="d">' +
+            (r.km != null ? Math.round(Number(r.km) * 100) / 100 + ' km · ' : '') +
+            (r.min != null ? r.min + ' min · ' : '') +
+            (r.fc_media != null ? 'FC ' + r.fc_media + (r.fc_max != null ? '/' + r.fc_max : '') + ' · ' : '') +
+            (r.esf != null ? 'esf ' + r.esf : '') +
+            (r.molestia ? ' · ⚠️ ' + esc(r.molestia) : '') +
+          '</div></div>';
+      }).join('');
+      Array.prototype.forEach.call(document.querySelectorAll('[data-del]'), function (b) {
+        b.onclick = function () {
+          var p = b.dataset.del.split('|');
+          if (!confirm('¿Borrar ' + p[1] + ' del ' + p[0] + '?')) return;
+          var r = A.borrar(atleta, p[0], p[1]);
+          if (!r.ok) alert(r.error);
+          pintarTodo();
+        };
+      });
+    }
+    var total = reg.length;
+    var km = reg.reduce(function (a, r) { return a + (r.km || 0); }, 0);
+    var min = reg.reduce(function (a, r) { return a + (r.min || 0); }, 0);
+    $('#rResumen').innerHTML =
+      '<span class="chip">Sesiones <b>' + total + '</b></span>' +
+      '<span class="chip">Km <b>' + km.toFixed(1) + '</b></span>' +
+      '<span class="chip">Horas <b>' + (min / 60).toFixed(1) + '</b></span>' +
+      '<span class="chip">Promedio <b>' + (total ? (km / total).toFixed(1) : '0') + '</b> km</span>';
+  }
+
+  // ---------------------------------------------------------------- agente
+  function pintarAgente() {
+    var d = A.leer(atleta);
+    $('#aEstado').innerHTML = 'atleta <b>' + esc(d.atleta.nombre) + '</b> · ' + d.registro.length + ' sesiones';
+    $('#aReg').innerHTML = ['atletas','leer','zonas','sesionDeHoy','registrar','borrar','ajustarSemana','exportar','importar','webhook']
+      .map(function (f) { return '<span class="chip">Agente.' + f + '()</span>'; }).join('');
+    $('#aDocs').textContent = A.docs();
+    var e = JSON.parse(localStorage.getItem('maraton.v1') || '{}');
+    $('#aWebhook').value = e.webhook || '';
+    var ua = A.estadoAviso().ultimoAviso;
+    $('#aW').textContent = ua ? ('Último aviso: ' + (ua.ok ? 'entregado ✅' : 'no llegó ❌') + ' · ' +
+      new Date(ua.cuando).toLocaleString('es-MX')) : '';
+    $('#aQuien').textContent = d.atleta.nombre;
+    $('#aFcmax').textContent = d.atleta.fcmax;
+    $('#aCarrera').textContent = d.atleta.carrera ? ('Carrera ' + fechaCorta(d.atleta.carrera)) : 'sin carrera';
+  }
+
+  // ---------------------------------------------------------------- ajustes
+  // Un chip por corredor: cada uno con su plan, su registro y su perfil.
+  function pintarAjustes() {
+    var lista = A.corredores().corredores;
+    $('#ajSlots').innerHTML = lista.map(function (a) {
+      return '<button class="chip" data-aj="' + a.id + '" style="cursor:pointer;font:inherit;font-size:12px;' +
+        (a.id === atleta ? 'background:rgba(176,67,62,.4);border-color:var(--acento2);color:#fff' : '') + '">' +
+        esc(a.nombre) + ' · FC ' + a.fcmax + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(document.querySelectorAll('#ajSlots [data-aj]'), function (b) {
+      b.onclick = function () {
+        atleta = b.dataset.aj; guardarUI(); pintarAtletas(); pintarAjustes();
+      };
+    });
+    var d = A.leer(atleta);
+    $('#ajNombre').value = d.atleta.nombre;
+    $('#ajEdad').value = d.atleta.edad == null ? '' : d.atleta.edad;
+    $('#ajFcmax').value = d.atleta.fcmax;
+    $('#ajReposo').value = d.atleta.fc_reposo || '';
+    $('#ajCarrera').value = d.atleta.carrera || '';
+    $('#ajMeta').value = d.atleta.meta || '';
+    $('#ajNotas').value = d.atleta.notas || '';
+    $('#ajDos').checked = dosAtletas;
+    var propio = A.corredores().corredores.filter(function (c) { return c.id === atleta; })[0];
+    $('#bBorrarCor').style.display = propio && !propio.base ? 'block' : 'none';
+    $('#ajAviso').textContent = '';
+    $('#ajAviso').className = 'aviso';
+  }
+
+  // ------------------------------------------------------------- corredor nuevo
+  // Un formulario, no una cadena de prompts: la meta, lo que aguanta y lo que tiene al dia.
+  // El plan lo arma Agente.semilla(); aqui solo se pinta, se revisa y se guarda.
+  var NU = null;   // ultima semilla armada, para no recalcular al crear
+
+  function abrirNuevo() {
+    $('#nuNombre').value = '';
+    $('#nuMeta').value = '10k';
+    $('#nuInicio').value = A.hoy();
+    ['nuKg','nuCm','nuEdad','nuFcmax','nuReposo','nuMolestias'].forEach(function (id) { $('#' + id).value = ''; });
+    $('#nuDias').value = 3;
+    $('#nuMin').value = 40;
+    $('#nuCorre').value = 'si';
+    $('#nuHist').value = 'algo';
+    $('#nuAviso').textContent = '';
+    $('#nuAviso').className = 'aviso';
+    $('#nuPlan').innerHTML = '';
+    NU = null;
+    verPlanNuevo();
+    $('#nuevo').classList.add('abierta');
+  }
+
+  function datosNuevo() {
+    return {
+      nombre: $('#nuNombre').value.trim(),
+      objetivo: $('#nuMeta').value,
+      inicio: $('#nuInicio').value,
+      kg: $('#nuKg').value, cm: $('#nuCm').value, edad: $('#nuEdad').value,
+      fcmax: $('#nuFcmax').value, fc_reposo: $('#nuReposo').value,
+      dias: $('#nuDias').value, min: $('#nuMin').value,
+      conversacion: $('#nuCorre').value === 'si',
+      historial: $('#nuHist').value,
+      molestias: $('#nuMolestias').value.trim()
+    };
+  }
+
+  // Muestra el plan antes de crearlo; si falta algo, dice que falta y no inventa.
+  function verPlanNuevo() {
+    var o = datosNuevo();
+    var r = A.semilla(o);
+    $('#nuPlan').innerHTML = '';
+    if (!r.ok) {
+      var pasos = A.semillaPasos(r.faltan || [], r.base);
+      $('#nuAviso').textContent = r.error === 'faltan datos' ? 'Faltan datos: ' : (r.error || 'No se pudo armar');
+      $('#nuAviso').className = 'aviso err';
+      $('#nuPlan').innerHTML = pasos.length
+        ? '<ul style="margin:8px 0 0 18px">' + pasos.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>'
+        : '';
+      NU = null;
+      return;
+    }
+    NU = r;
+    var s1 = r.semanas[0];
+    $('#nuAviso').textContent = (r.base ? 'Empieza con base de 6 semanas (aún no corre seguido)' :
+      'Plan para ' + nombreMeta(r.objetivo) + ': ' + r.semanas.length + ' semanas') +
+      ' · semana 1: ' + (s1.km || (s1.totalMin + ' min'));
+    $('#nuAviso').className = 'aviso ok';
+    var filas = s1.filas.map(function (f) {
+      return '<tr><td>' + (f.fecha || '') + '</td><td>' + nombreTipo(f.tipo) + '</td><td>' +
+             (f.km || '—') + '</td><td>' + f.min + ' min</td></tr>';
+    }).join('');
+    $('#nuPlan').innerHTML = '<div style="margin-top:12px"><b style="color:var(--hueso)">Semana 1</b></div>' +
+      '<table style="width:100%;font-size:12px;margin-top:6px;border-collapse:collapse">' +
+      '<tr style="color:var(--tenue)"><th align="left">Fecha</th><th align="left">Sesión</th><th align="left">km</th><th align="left">Tiempo</th></tr>' +
+      filas + '</table>' + '<div style="margin-top:8px;color:var(--tenue)">' +
+      'Pico: ' + (r.km_declarado || '—') + ' km · ' + r.semanas.length + ' semanas</div>' +
+      (r.notas && r.notas.length ? '<ul style="margin:10px 0 0 18px">' + r.notas.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '');
+  }
+
+  function nombreMeta(m) {
+    return { 'base': 'base', '5k': '5 km', '10k': '10 km', '21k': 'medio maratón', '42k': 'maratón' }[m] || m;
+  }
+
+  function crearCorredor() {
+    if (!NU) { verPlanNuevo(); if (!NU) return; }
+    var o = datosNuevo();
+    var r = A.crearCorredor({
+      nombre: o.nombre, fcmax: o.fcmax, fc_reposo: o.fc_reposo, edad: o.edad,
+      kg: o.kg, cm: o.cm, objetivo: NU.objetivo, inicio: o.inicio,
+      dias: o.dias, min: o.min, historial: o.historial, conversacion: o.conversacion,
+      molestias: o.molestias
+    });
+    if (!r.ok) {
+      $('#nuAviso').textContent = r.error + (r.faltan && r.faltan.length ? ' (' + r.faltan.join(', ') + ')' : '');
+      $('#nuAviso').className = 'aviso err';
+      return;
+    }
+    atleta = r.id;
+    // Antes se encendia solo cada vez que habia dos corredores; ahora manda la preferencia.
+    $('#nuevo').classList.remove('abierta');   // la hoja se cierra sola al guardar
+    guardarUI(); pintarTodo(); pintarAjustes();
+    $('#nuevo').classList.remove('abierta');
+    $('#ajAviso').textContent = r.nombre + ' · ' + nombreMeta(r.objetivo || 'base') + ', ' +
+      r.semanas_total + ' semanas desde el ' + fechaCorta(r.inicio);
+    $('#ajAviso').className = 'aviso ok';
+  }
+
+  function ajustesGuardar() {
+    var r = A.perfil(atleta, {
+      nombre: $('#ajNombre').value, edad: $('#ajEdad').value,
+      fcmax: $('#ajFcmax').value, fc_reposo: $('#ajReposo').value,
+      carrera: $('#ajCarrera').value, meta: $('#ajMeta').value,
+      notas: $('#ajNotas').value
+    });
+    if (!r.ok) {
+      $('#ajAviso').textContent = r.error;
+      $('#ajAviso').className = 'aviso err';
+      return;
+    }
+    dosAtletas = $('#ajDos').checked;
+    guardarUI();
+    pintarTodo();
+    pintarAjustes();
+    var av = 'Guardado · ' + r.perfil.nombre + ' · zonas con FC ' + r.fcmax;
+    if (r.reajuste && r.reajuste.ok) {
+      av += ' · plan reajustado a ' + r.reajuste.semanas + ' semanas (carrera ' + fechaCorta(r.reajuste.carrera) +
+            ')'; 
+      if (r.reajuste.extra) av += ', ' + r.reajuste.extra + ' de mantenimiento';
+      if (r.reajuste.quitadas) av += ', ' + r.reajuste.quitadas + ' recortadas';
+    } else if (r.reajuste && !r.reajuste.ok) {
+      av = 'No se cambió la fecha: ese calendario no cabe. ' + r.reajuste.error +
+           ' (la carrera sigue el ' + fechaCorta(r.perfil.carrera) + ')';
+      pintarAjustes();
+      $('#ajAviso').textContent = av;
+      $('#ajAviso').className = 'aviso err';
+      return;
+    }
+    $('#ajAviso').textContent = av;
+    $('#ajAviso').className = 'aviso ok';
+  }
+
+  // Marca cual vista esta a la vista. Va aparte porque pintarTodo se sale antes en la app en blanco.
+  function pintarBarra() {
+    Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) {
+      b.classList.toggle('on', b.dataset.v === vista);
+    });
+    ['Hoy','Plan','Reg','Agente'].forEach(function (v) {
+      $('#v' + v).classList.toggle('oculto', v !== vista);
+    });
+  }
+
+  function pintarTodo() {
+    if (vieneEnBlanco()) { pintarEnBlanco(); return; }
+    if (HOY_HTML !== null) { $('#vHoy').innerHTML = HOY_HTML; HOY_HTML = null; }
+    pintarAtletas(); pintarHoy(); pintarPlan(); pintarReg(); pintarAgente();
+    if ($('#fbTexto')) pintarFeedbackCoach(A.feedbackGuardado(atleta));
+    if ($('#ntGuardar')) $('#ntGuardar').onclick = guardarNotaUI;
+    if ($('#bManual')) $('#bManual').onclick = function () { abrirRegistro('facil'); };
+    Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) {
+      b.classList.toggle('on', b.dataset.v === vista);
+    });
+    ['Hoy','Plan','Reg','Agente'].forEach(function (v) {
+      $('#v' + v).classList.toggle('oculto', v !== vista);
+    });
+  }
+
+  // La primera vez que alguien abre la app no hay plan, ni nombre, ni historial: se pide lo minimo
+  // y se avisa que ese plan lo arma la app en el telefono. Nada de datos de otra persona.
+  var HOY_HTML = null;     // el HTML de Hoy tal como viene en la app; se devuelve al salir del blanco
+
+  function pintarEnBlanco() {
+    $('#atletas').innerHTML = '';
+    if (HOY_HTML === null) HOY_HTML = $('#vHoy').innerHTML;
+    $('#vHoy').innerHTML = '<div class="card">' +
+      '<h3 style="margin:0 0 6px">Empecemos por ti</h3>' +
+      '<p class="peq" style="margin:0 0 10px">Esta app no trae a nadie dentro: ni nombres, ni planes, ni historial. ' +
+      'Tu plan se arma aquí con tu meta y con lo que aguantas hoy.</p>' +
+      '<button class="bt" id="bEmpezar">Poner mis datos</button></div>';
+    $('#bEmpezar').onclick = abrirAlta;
+    pintarBarra();           // el boton de abajo se pone solo en Hoy
+  }
+
+  // --------------------------------------------------------------- registro
+  function abrirRegistro(tipo, km) {
+    $('#fTipo').value = tipo || 'facil';
+    $('#fFecha').value = diaActivo();
+    $('#fKm').value = km || '';
+    $('#fMin').value = '';
+    $('#fEsf').value = '';
+    $('#fFcm').value = '';
+    $('#fFcx').value = '';
+    $('#fMolestia').value = '';
+    $('#fAviso').textContent = '';
+    $('#fAviso').className = 'aviso';
+    $('#fZona').textContent = '–';
+    $('#hoja').classList.add('abierta');
+  }
+  function cerrarRegistro() { $('#hoja').classList.remove('abierta'); }
+
+  // ------------------------------------------------------- ficha de la sesion
+  var fichaActual = null;
+  function abrirFicha(tipo) {
+    var r = A.ficha(atleta, tipo, diaActivo());
+    if (!r.ok) { alert(r.error); return; }
+    fichaActual = r;
+    $('#dTitulo').textContent = r.titulo;
+    $('#dChips').innerHTML =
+      '<span class="chip">Semana ' + r.semana + ' de ' + (r.total || 21) + '</span>' +
+      '<span class="chip">' + esc(r.fila.fechas) + '</span>' +
+      '<span class="chip">Semana <b>' + r.fila.km + '</b> km</span>';
+    $('#dResumen').textContent = r.resumen;
+    $('#dPasos').innerHTML = r.pasos.map(function (p) {
+      return '<div class="paso"><div class="k">' + esc(p.k) + '</div>' +
+             '<div class="v">' + esc(p.v) + '</div></div>';
+    }).join('');
+    $('#dAvisos').innerHTML = r.avisos.map(function (t) {
+      return '<div class="peq">• ' + esc(t) + '</div>';
+    }).join('');
+    $('#dHacer').textContent = r.hecha ? 'Anotar otra vez' : 'Anotar esta sesión';
+    $('#dFuerzaDet').style.display = 'none';
+    $('#dFuerzaDet').innerHTML = '';
+    $('#dFuerza').textContent = 'Ver los ejercicios de fuerza, paso a paso';
+    $('#ficha').classList.add('abierta');
+  }
+  function cerrarFicha() { $('#ficha').classList.remove('abierta'); }
+
+  // Fuerza: la ficha lo resume en una linea; aqui se despliega el paso a paso.
+  function verFuerza() {
+    var det = $('#dFuerzaDet');
+    if (det.style.display !== 'none') { det.style.display = 'none'; $('#dFuerza').textContent = 'Ver los ejercicios de fuerza, paso a paso'; return; }
+    var r = A.fuerzaPlan('A');
+    det.innerHTML = '<div class="paso"><div class="k">' + esc(r.titulo) + '</div>' +
+      '<div class="v">' + esc(r.resumen) + '</div></div>' +
+      r.reglas.map(function (t) { return '<div class="peq">• ' + esc(t) + '</div>'; }).join('') +
+      r.ejercicios.map(function (e) {
+        return '<div class="paso"><div class="k">' + esc(e.nombre) + ' · ' + esc(e.dosis) + '</div>' +
+          '<div class="v">' + esc(e.como) + '</div></div>';
+      }).join('');
+    det.style.display = 'block';
+    $('#dFuerza').textContent = 'Ocultar los ejercicios';
+  }
+
+  function zonaEnVivo() {
+    var v = $('#fFcm').value;
+    if (v === '') { $('#fZona').textContent = '–'; return; }
+    var z = A.zonas(atleta).zonas, k;
+    for (k in z) if (Number(v) >= z[k][0] && Number(v) <= z[k][1]) { $('#fZona').textContent = k; return; }
+    $('#fZona').textContent = Number(v) < z.Z1[0] ? 'bajo Z1' : 'sobre Z5';
+  }
+
+  // ---------------------------------------------------------------- eventos
+  $('#bCerrar').onclick = cerrarRegistro;
+  $('#hoja').onclick = function (e) { if (e.target === $('#hoja')) cerrarRegistro(); };
+  $('#dCerrar').onclick = cerrarFicha;
+  $('#dFuerza').onclick = verFuerza;
+  $('#ficha').onclick = function (e) { if (e.target === $('#ficha')) cerrarFicha(); };
+  $('#dHacer').onclick = function () {
+    var t = fichaActual ? fichaActual.tipo : 'facil';
+    var km = fichaActual && t === 'larga' ? fichaActual.fila.larga : '';
+    cerrarFicha();
+    abrirRegistro(t, km);
+  };
+  $('#fFcm').oninput = zonaEnVivo;
+  $('#bNueva').onclick = function () { abrirRegistro('facil'); };
+  // El boton pinta lo que la PC ya calculo; si aun no hay nada, lo pide.
+  $('#bFb').onclick = pedirFeedback;
+
+  $('#bGuardar').onclick = function () {
+    var r = A.registrar(atleta, {
+      tipo: $('#fTipo').value, fecha: $('#fFecha').value,
+      km: $('#fKm').value, min: $('#fMin').value,
+      fc_media: $('#fFcm').value, fc_max: $('#fFcx').value,
+      esf: $('#fEsf').value, molestia: $('#fMolestia').value
+    });
+    if (!r.ok) {
+      $('#fAviso').textContent = r.error;
+      $('#fAviso').className = 'aviso err';
+      return;
+    }
+    var b = A.balance(atleta, $('#fFecha').value);
+    $('#fAviso').textContent = b.ok
+      ? 'Guardado ✅ · semana ' + b.semana + ': ' + b.kmHechos.toFixed(1) + ' de ' + (b.fila ? b.fila.km : '—') + ' km' +
+        (b.pendientes.length ? ' · falta ' + b.pendientes.join(', ') : ' · semana completa')
+      : 'Guardado ✅';
+    $('#fAviso').className = 'aviso ok';
+    pintarTodo();
+    setTimeout(function () { cerrarRegistro(); vista = 'Reg'; pintarTodo(); pedirFeedback(); }, 1400);
+  };
+
+  Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) {
+    b.onclick = function () { vista = b.dataset.v; guardarUI(); pintarTodo(); };
+  });
+
+  $('#bExportar').onclick = function () {
+    var r = A.exportar(atleta);
+    if (!r.ok) { $('#aAviso').textContent = r.error; return; }
+    var blob = new Blob([r.json], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'plan-' + atleta + '-' + A.hoy() + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+    $('#aAviso').textContent = 'Archivo generado ✅';
+    $('#aAviso').className = 'aviso ok';
+  };
+
+  $('#bImportar').onclick = function () { $('#fImportar').click(); };
+  $('#fImportar').onchange = function () {
+    var f = this.files && this.files[0];
+    if (!f) return;
+    var lector = new FileReader();
+    lector.onload = function () {
+      try {
+        var r = A.importar(String(lector.result));
+        $('#aAviso').textContent = r.ok ? ('Importadas ' + r.importadas + ' sesiones ✅') : r.error;
+        $('#aAviso').className = 'aviso ' + (r.ok ? 'ok' : 'err');
+        pintarTodo();
+      } catch (e) {
+        $('#aAviso').textContent = 'El archivo no es un JSON válido';
+        $('#aAviso').className = 'aviso err';
+      }
+    };
+    lector.readAsText(f);
+  };
+
+  // ------------------------------------------------------------ importar Garmin/Strava
+  // Acepta .tcx y .gpx (Garmin Connect, Strava) y .csv (export de Strava). No sube nada:
+  // el archivo se lee en el telefono y solo se guardan las sesiones.
+  function isoUTC(txt) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(txt || ''));
+    return m ? (m[1] + '-' + m[2] + '-' + m[3]) : null;
+  }
+  function rangoZona(v) {
+    if (v == null || !isFinite(v)) return '';
+    var z = A.zonas(atleta).zonas, k;
+    for (k in z) if (v >= z[k][0] && v <= z[k][1]) return k;
+    return v < z.Z1[0] ? 'bajo Z1' : 'Z5+';
+  }
+  // Une la FC de todos los puntos: la media pesa por tiempo.
+  function fcDePuntos(puntos) {
+    var sum = 0, n = 0, max = null;
+    puntos.forEach(function (p) { if (p.fc) { sum += p.fc; n++; if (!max || p.fc > max) max = p.fc; } });
+    return { media: n ? Math.round(sum / n) : null, max: max };
+  }
+  function leerTCX(txt) {
+    var doc = new DOMParser().parseFromString(txt, 'application/xml');
+    if (doc.querySelector('parsererror')) return { error: 'El TCX esta dañado' };
+    var act = doc.querySelector('Activity');
+    var fecha = act ? isoUTC(act.querySelector('Id') ? act.querySelector('Id').textContent : '') : null;
+    if (!fecha) { var l = doc.querySelector('Lap'); fecha = l ? isoUTC(l.getAttribute('StartTime')) : null; }
+    var dist = 0, seg = 0, pts = [];
+    Array.prototype.forEach.call(doc.querySelectorAll('Lap'), function (l) {
+      var t = l.querySelector('TotalTimeSeconds');
+      if (t) seg += Number(t.textContent) || 0;
+      // La distancia puede venir en <DistanceMeters> o en <Distance>
+      var d = l.getElementsByTagName('DistanceMeters')[0] || l.getElementsByTagName('Distance')[0] ||
+              l.querySelector('Distance');
+      if (d) dist += Number(d.textContent) || 0;
+    });
+    if (!dist) {
+      // Hay TCX sin distancia por vuelta: se suma la de cada punto cuando existe
+      Array.prototype.forEach.call(doc.getElementsByTagName('DistanceMeters'), function (d) {
+        var v = Number(d.textContent) || 0; if (v > dist) dist = v;
+      });
+    }
+    Array.prototype.forEach.call(doc.querySelectorAll('Trackpoint'), function (tp) {
+      var v = tp.querySelector('HeartRateBpm Value') || tp.querySelector('HeartRateBpm > Value');
+      pts.push({ fc: v ? Number(v.textContent) : null });
+    });
+    return { fecha: fecha, km: dist ? dist / 1000 : null, min: seg ? Math.round(seg / 60) : null, fc: fcDePuntos(pts) };
+  }
+  function leerGPX(txt) {
+    var doc = new DOMParser().parseFromString(txt, 'application/xml');
+    if (doc.querySelector('parsererror')) return { error: 'El GPX esta dañado' };
+    var trk = doc.querySelector('trkpt') || doc.querySelector('rtept');
+    var fecha = trk ? isoUTC(trk.querySelector('time') && trk.querySelector('time').textContent) : null;
+    var seg = doc.querySelector('trkseg');
+    var pts = [], acum = 0, anterior = null;
+    Array.prototype.forEach.call(doc.querySelectorAll('trkpt'), function (p) {
+      var lat = Number(p.getAttribute('lat')), lon = Number(p.getAttribute('lon'));
+      var v = p.querySelector('hr') || p.querySelector('extensions hr') || p.querySelector('*[localName="hr"]');
+      pts.push({ fc: v ? Number(v.textContent) : null });
+      if (anterior && isFinite(lat) && isFinite(lon)) {
+        var dx = 111.32 * (lon - anterior.lon) * Math.cos(lat * Math.PI / 180);
+        var dy = 110.57 * (lat - anterior.lat);
+        var d = Math.sqrt(dx * dx + dy * dy);
+        if (d < 0.25) acum += d;      // saltos de GPS se ignoran
+      }
+      anterior = { lat: lat, lon: lon };
+    });
+    var t0 = doc.querySelector('metadata time'), t1 = doc.querySelectorAll('trkpt time');
+    var min = null;
+    if (t0 && t1.length) min = Math.round((new Date(t1[t1.length - 1].textContent) - new Date(t0.textContent)) / 60000);
+    else if (t1.length) min = Math.round((new Date(t1[t1.length - 1].textContent) - new Date(t1[0].textContent)) / 60000);
+    return { fecha: fecha, km: acum || null, min: min, fc: fcDePuntos(pts) };
+  }
+  // Casi cualquier fecha que salga de un reloj: "Nov 9, 2026, 6:40:12 AM" (Strava), "9/11/2026",
+  // "2026-11-09 06:40", "09.11.2026", "11-09-26", epoch en s o ms.
+  var MESES = { jan:'01', feb:'02', mar:'03', apr:'04', may:'05', jun:'06', jul:'07', aug:'08', sep:'09',
+                oct:'10', nov:'11', dec:'12', ene:'01', abr:'04', ago:'08', dic:'12' };
+  function fechaDeCSV(txt) {
+    txt = String(txt || '').replace(/"/g, '').trim();
+    if (!txt) return null;
+    var m = isoUTC(txt);
+    if (m) return m;
+    // Nov 9, 2026 / 9 nov 2026 / 9 de noviembre de 2026
+    m = /^([A-Za-z]{3,})[a-zé]*\.?\s+(\d{1,2}),?\s+(\d{4})/.exec(txt);
+    if (m && MESES[m[1].toLowerCase().slice(0, 3)]) {
+      return m[3] + '-' + MESES[m[1].toLowerCase().slice(0, 3)] + '-' + (m[2].length < 2 ? '0' + m[2] : m[2]);
+    }
+    m = /^(\d{1,2})\s+(?:de\s+)?([A-Za-z]{3,})[a-zé]*\.?,?\s+(?:de\s+)?(\d{4})/.exec(txt);
+    if (m && MESES[m[2].toLowerCase().slice(0, 3)]) {
+      return m[3] + '-' + MESES[m[2].toLowerCase().slice(0, 3)] + '-' + (m[1].length < 2 ? '0' + m[1] : m[1]);
+    }
+    // 9/11/2026, 09.11.2026, 9-11-26
+    m = /^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/.exec(txt);
+    if (m) {
+      var a = Number(m[1]), b = Number(m[2]), y = m[3];
+      if (y.length === 2) y = String(2000 + Number(y));
+      // En Mexico se escribe dia/mes. Solo se toma mes/dia cuando el primer numero
+      // no puede ser dia (>12, formato gringo 11/25) o cuando el segundo >12.
+      var mes = a, dia = b;
+      if (a <= 12 && b <= 12) { mes = b; dia = a; }          // 10/11 -> 10 de noviembre
+      else if (a > 12 && b <= 12) { mes = b; dia = a; }      // 25/11 -> dia primero
+      else if (a <= 12 && b > 12) { mes = a; dia = b; }      // 11/25 -> mes primero
+      if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
+      return y + '-' + (mes < 10 ? '0' : '') + mes + '-' + (dia < 10 ? '0' : '') + dia;
+    }
+    if (/^\d{10,13}$/.test(txt)) {
+      var e = new Date(Number(txt) * (txt.length > 10 ? 1 : 1000));
+      return isNaN(e.getTime()) ? null : A.iso(e);
+    }
+    return null;
+  }
+  // Strava exporta metros; algunos exportan km. Si trae "km" o el valor es chico, se toma como km.
+  function distanciaKm(v) {
+    var t = String(v || '').replace(/"/g, '').trim().toLowerCase();
+    var num = Number(t.replace(/[^0-9.]/g, ''));
+    if (!isFinite(num) || !num) return null;
+    if (/km/.test(t)) return num;
+    if (/m\b|metros/.test(t)) return num / 1000;
+    return num > 500 ? num / 1000 : num;
+  }
+  // Corta una linea de CSV respetando las comillas: Strava escribe "Nov 9, 2026, 6:40 AM".
+  function campoCSV(linea) {
+    var out = [], act = '', comillas = false;
+    for (var i = 0; i < linea.length; i++) {
+      var ch = linea.charAt(i);
+      if (ch === '"') {
+        if (comillas && linea.charAt(i + 1) === '"') { act += '"'; i++; }
+        else comillas = !comillas;
+      } else if (ch === ',' && !comillas) { out.push(act); act = ''; }
+      else act += ch;
+    }
+    out.push(act);
+    return out.map(function (c) { return c.trim(); });
+  }
+  // Cabeceras de fecha que se reconocen solas. Si no aparece ninguna, se abre el mapeo.
+  var ALIAS = {
+    fecha: ['activity date', 'fecha de la actividad', 'date', 'fecha', 'fecha de inicio', 'start time',
+            'start date', 'when', 'timestamp', 'time', 'dia', 'día', 'date/time', 'data'],
+    km: ['distance', 'distancia', 'distancia (km)', 'distancia (m)', 'km', 'kilometers', 'distance (km)'],
+    // 'moving time' primero: en el CSV de Garmin "Tiempo en movimiento" viene en segundos,
+    // igual que "Moving Time" de Strava. Si se toma "Duración" (hh:mm:ss) primero, se lee como segundos.
+    min: ['moving time', 'tiempo en movimiento', 'elapsed time', 'duration', 'duracion', 'duración',
+          'tiempo', 'minutos', 'minutes', 'moving time (s)'],
+    tipo: ['activity type', 'type', 'tipo', 'actividad', 'sport', 'deporte'],
+    fc: ['average heart rate', 'avg hr', 'average_hr', 'fc media', 'pulso medio', 'average hr',
+         'frecuencia cardiaca media', 'heart rate'],
+    fc_max: ['max heart rate', 'max hr', 'fc maxima', 'fc máxima', 'pulso maximo'],
+    temp: ['temperatura media', 'average temperature', 'temp', 'temperatura', 'temperature',
+           'avg temp', 'weather temperature'],
+    esf: ['effort', 'esfuerzo', 'perceived exertion', 'perceived effort'],
+    notas: ['notes', 'notas', 'name', 'nombre', 'title', 'actividad']
+  };
+  function sinTildes(t) {
+    return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  }
+  // Nombre del campo que mejor le queda a una cabecera. -1 si no se reconoce.
+  function adivinar(campo, cab) {
+    var als = ALIAS[campo] || [], i, j;
+    for (i = 0; i < als.length; i++) {
+      j = cab.indexOf(sinTildes(als[i]));
+      if (j >= 0) return j;
+    }
+    if (campo === 'fc') {
+      for (i = 0; i < cab.length; i++) if (/heart rate|pulso/.test(cab[i]) && !/max/.test(cab[i])) return i;
+    }
+    return -1;
+  }
+  function adivinarFecha(cab, filas) {
+    var i = adivinar('fecha', cab);
+    if (i >= 0) return i;
+    // ultima pasada: la primera columna cuyo primer valor se deja leer como fecha
+    for (var j = 0; j < cab.length && j < 4; j++) {
+      if (filas[0] && fechaDeCSV(filas[0][j])) return j;
+    }
+    return -1;
+  }
+  // Lee el CSV. Si no reconoce la fecha, NO falla: devuelve el mapeo para que se elija a mano.
+  function leerCSV(txt, mapa) {
+    // Strava escribe la fecha como "Nov 10, 2026, 6:40:12 AM" sin comillas: esas comas
+    // parten la fila y la fecha se pierde. Se le ponen comillas antes de cortar.
+    txt = txt.replace(/([A-Za-z]{3,}\.?\s+\d{1,2}),\s*(\d{4}),\s*(\d{1,2}:\d{2}(?::\d{2})?\s*[APap]\.?[Mm]\.?)/g,
+                      '"$1, $2, $3"');
+    var lineas = txt.split(/\r?\n/).filter(function (l) { return l.trim(); });
+    if (lineas.length < 2) return { error: 'El CSV esta vacio o trae una sola linea' };
+    var cab = campoCSV(lineas[0]).map(sinTildes);
+    var filas = [];
+    for (var i = 1; i < lineas.length; i++) filas.push(campoCSV(lineas[i]));
+    mapa = mapa || {};
+    function campo(k) {
+      if (mapa[k] !== undefined) return Number(mapa[k]);
+      return k === 'fecha' ? adivinarFecha(cab, filas) : adivinar(k, cab);
+    }
+    var iF = campo('fecha'), iK = campo('km'), iM = campo('min'), iT = campo('tipo'),
+        iH = campo('fc'), iX = campo('fc_max'), iE = campo('esf'), iW = campo('temp');
+    if (iF < 0) {
+      return { error: 'No reconocí la columna de fecha. Dime cuál es.', falta: 'fecha',
+               cabeceras: campoCSV(lineas[0]), muestra: filas.slice(0, 3), total: filas.length,
+               mapeo: { km: iK, min: iM, tipo: iT, fc: iH } };
+    }
+    var hechas = 0, vistas = 0, sinDatos = 0, rechazos = [];
+    for (var f = 0; f < filas.length; f++) {
+      var c = filas[f];
+      var fecha = fechaDeCSV(c[iF]);
+      if (!fecha) continue;
+      vistas++;
+      var tipo = 'facil';
+      if (iT >= 0 && c[iT]) {
+        var t = sinTildes(c[iT]);
+        if (/run|corre|trail/.test(t)) tipo = 'facil';
+        else if (/ride|bici|walk|caminata|swim|nada|hike|sender/.test(t)) continue;
+      }
+      var km = iK >= 0 ? distanciaKm(c[iK]) : null;
+      var min = iM >= 0 ? minutosDeCSV(c[iM]) : null;
+      var fc = iH >= 0 ? Number(String(c[iH]).replace(/[^0-9.]/g, '')) : NaN;
+      var fcm = iX >= 0 ? Number(String(c[iX]).replace(/[^0-9.]/g, '')) : NaN;
+      var esf = iE >= 0 ? Number(String(c[iE]).replace(/[^0-9.]/g, '')) : NaN;
+      // sin columna (o con celda vacia) se guarda null, no NaN: el validador rechaza null lo mismo que basura
+      if (!isFinite(fc) || fc < 30 || fc > 230) fc = null;
+      if (!isFinite(fcm) || fcm < 30 || fcm > 230) fcm = null;
+      if (!isFinite(esf) || esf < 1 || esf > 10) esf = null;
+      // Garmin deja "--" cuando no hay lectura; se descarta
+      var temp = iW >= 0 ? Number(String(c[iW]).replace(/[^0-9.-]/g, '')) : NaN;
+      if (!isFinite(temp) || temp < -20 || temp > 55) temp = null;
+      if (!km && !min) { sinDatos++; continue; }
+      // A.registrar valida cada campo que reciba: si no hay dato, se omite la llave
+      var act = { fecha: fecha, tipo: tipo, km: km, min: min };
+      if (fc !== null) act.fc_media = fc;
+      if (fcm !== null) act.fc_max = fcm;
+      if (esf !== null) act.esf = esf;
+      if (temp !== null) act.temp = temp;
+      var res = guardarActividad(act, false);
+      if (res.ok) hechas++;
+      else { rechazos.push(fecha + ': ' + res.error); }
+    }
+    return { ok: true, km: null, min: null, fc: null, hechas: hechas, vistas: vistas,
+             sinDatos: sinDatos, rechazos: rechazos.slice(0, 3),
+             cabeceras: campoCSV(lineas[0]), mapeo: { fecha: iF, km: iK, min: iM, tipo: iT, fc: iH } };
+  }
+  // "45:30", "45:30:00", "2730" (segundos de Strava), "45 min", "1.5 h"
+  function minutosDeCSV(v) {
+    var t = String(v || '').replace(/"/g, '').trim();
+    if (!t) return null;
+    var m = /^(\d+):(\d{1,2})(?::(\d{1,2}))?$/.exec(t);
+    if (m) return Math.round(Number(m[1]) + Number(m[2]) / 60 + (m[3] ? Number(m[3]) / 3600 : 0));
+    var n = Number(t.replace(/[^0-9.]/g, ''));
+    if (!isFinite(n) || n <= 0) return null;
+    if (/h\b|hr|hora/.test(t)) return Math.round(n * 60);
+    if (/min/.test(t)) return Math.round(n);
+    return Math.round(n / 60);   // Strava exporta segundos
+  }
+
+  // El archivo no dice si fue calidad, larga o facil: lo elige quien importa antes de guardar.
+  var TIPOS_ARCHIVO = [['facil','Fácil'], ['calidad','Calidad'], ['larga','Larga'],
+                       ['fuerza','Fuerza'], ['carrera','Carrera'], ['otro','Otro']];
+  function elegirTipo(tipo) {
+    tipoImp = tipo || 'facil';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-imp]'), function (b) {
+      b.classList.toggle('pri', b.dataset.imp === tipoImp);
+    });
+    var dup = A.leer(atleta).registro.some(function (s) { return s.fecha === impActual.fecha && s.tipo === tipoImp; });
+    var bOk = document.getElementById('bImpOk');
+    if (bOk) {
+      bOk.style.display = dup ? 'none' : '';
+      bOk.textContent = 'Guardar como ' + (tipoImp === 'facil' ? 'fácil' : tipoImp);
+    }
+    var av = document.getElementById('iDup');
+    if (av) av.style.display = dup ? '' : 'none';
+    return { dup: dup };
+  }
+  // Un solo camino para guardar lo importado: si el dia ya tiene ese tipo, no entra.
+  function guardarActividad(r, manual) {
+    var reg = A.leer(atleta).registro;
+    var dup = reg.some(function (s) { return s.fecha === r.fecha && s.tipo === r.tipo; });
+    if (dup && !manual) return { ok: false, error: 'Ese dia ya tiene una sesion de ' + r.tipo };
+    // La fuerza y la corrida del mismo dia son dos estimulos: no se pisan entre si.
+    var corriendo = ['calidad', 'facil', 'larga', 'carrera', 'otro'].indexOf(r.tipo) >= 0;
+    if (corriendo && !manual && reg.some(function (s) {
+      return s.fecha === r.fecha && ['calidad', 'facil', 'larga', 'carrera', 'otro'].indexOf(s.tipo) >= 0;
+    })) return { ok: false, error: 'Ese dia ya tiene una corrida' };
+    var s = { fecha: r.fecha, tipo: r.tipo, km: r.km, min: r.min };
+    if (r.fc_media !== undefined && r.fc_media !== null) s.fc_media = r.fc_media;
+    if (r.fc_max !== undefined && r.fc_max !== null) s.fc_max = r.fc_max;
+    if (r.esf !== undefined && r.esf !== null) s.esf = r.esf;
+    if (r.temp !== undefined && r.temp !== null) s.temp = r.temp;
+    if (r.zona) s.zona = r.zona;
+    return A.registrar(atleta, s);
+  }
+  function importarActividad(txt, nombre) {
+    var x = /<\?xml/i.test(txt.slice(0, 200));
+    var r;
+    if (x && /<TrainingCenterDatabase/i.test(txt)) r = leerTCX(txt);
+    else if (x && /<gpx/i.test(txt)) r = leerGPX(txt);
+    else r = leerCSV(txt);
+    if (r.error) return r;
+    if (r.hechas !== undefined) return r;
+    if (!r.fecha) r.fecha = A.hoy();
+    r.zona = rangoZona(r.fc && r.fc.media);
+    return r;
+  }
+  // Si el CSV no trae fecha reconocible, se elige la columna a mano. En cuanto hay fecha, se importa.
+  var csvActual = null;
+  function pintarMapaCSV(r) {
+    var box = $('#iMapa');
+    if (!box) return;
+    if (!r || !r.alta) { box.innerHTML = ''; return; }
+    csvActual = r;
+    var cab = r.cabeceras.map(function (c, i) { return { c: c, i: i }; });
+    function opciones(sel) {
+      return '<option value="-1">(ninguna)</option>' + cab.map(function (x) {
+        return '<option value="' + x.i + '"' + (Number(sel) === x.i ? ' selected' : '') + '>' +
+               esc(x.c || ('columna ' + (x.i + 1))) + '</option>';
+      }).join('');
+    }
+    var campos = [['fecha', 'Fecha (obligatoria)'], ['km', 'Distancia'], ['min', 'Duración'],
+                  ['tipo', 'Tipo de actividad'], ['fc', 'Pulso medio']];
+    var m = r.mapeo || {};
+    box.innerHTML =
+      '<div class="card" style="margin-top:8px"><h2 style="font-size:14px">¿Cuál columna es cuál?</h2>' +
+      '<p class="peq" style="margin:4px 0">El archivo no trae una fecha que se pueda leer. Elige las columnas:</p>' +
+      '<table class="mapa"><thead><tr><th>Campo</th><th>Columna del archivo</th></tr></thead><tbody>' +
+      campos.map(function (c) {
+        return '<tr><td>' + c[1] + '</td><td><select data-map="' + c[0] + '">' +
+               opciones(m[c[0]]) + '</select></td></tr>';
+      }).join('') + '</tbody></table>' +
+      '<p class="peq" style="margin:6px 0">Primera fila: ' +
+        esc(r.muestra && r.muestra[0] ? r.muestra[0].join(' | ') : '') + '</p>' +
+      '<button class="bt pri" id="bMapOk" style="margin-top:6px">Importar con estas columnas</button>' +
+      '<p class="peq" id="mapAviso"></p></div>';
+    $('#bMapOk').onclick = function () {
+      var mapa = {};
+      Array.prototype.forEach.call(box.querySelectorAll('[data-map]'), function (s) {
+        var v = Number(s.value);
+        if (v >= 0) mapa[s.dataset.map] = v;
+      });
+      if (mapa.fecha === undefined) {
+        $('#mapAviso').textContent = 'Falta decir cuál es la fecha.';
+        return;
+      }
+      var res = leerCSV(csvActual.texto, mapa);
+      if (res.error) { $('#mapAviso').textContent = res.error; return; }
+      $('#iMapa').innerHTML = '';
+      $('#iPrev').innerHTML = '<span class="chip">' + res.hechas + ' sesiones nuevas de ' + res.vistas +
+        ' actividades' + (res.sinDatos ? ' · ' + res.sinDatos + ' sin km ni tiempo' : '') + '</span>';
+      pintarTodo();
+    };
+  }
+  function previaImport(texto, nombre) {
+    var r = importarActividad(texto, nombre);
+    var caja = $('#iPrev');
+    pintarMapaCSV(null);
+    if (r.error) {
+      caja.innerHTML = '<span class="chip" style="color:var(--rojo,#f66)">' + esc(r.error) + '</span>';
+      if (r.cabeceras) { r.texto = texto; r.alta = true; pintarMapaCSV(r); }
+      return;
+    }
+    if (r.hechas !== undefined) {
+      caja.innerHTML = '<span class="chip">' + r.hechas + ' sesiones nuevas de ' + r.vistas + ' actividades</span>' +
+        (r.rechazos && r.rechazos.length
+          ? '<p class="peq" style="margin-top:6px">No se guardaron: ' + r.rechazos.map(esc).join(' · ') + '</p>'
+          : '');
+      pintarTodo();
+      return;
+    }
+    impActual = r;
+    var partes = [];
+    if (r.km != null) partes.push(Number(r.km).toFixed(2) + ' km');
+    if (r.min != null) partes.push(r.min + ' min');
+    if (r.fc && r.fc.media) partes.push('FC ' + r.fc.media + (r.fc.max ? '/' + r.fc.max : '') + (r.zona ? ' · ' + r.zona : ''));
+    var botones = '<div class="fila" style="flex-wrap:wrap;gap:6px">' +
+      TIPOS_ARCHIVO.map(function (t) {
+        return '<button class="bt mini" data-imp="' + t[0] + '">' + t[1] + '</button>';
+      }).join('') + '</div>';
+    caja.innerHTML =
+      '<span class="chip">' + esc(nombre) + '</span>' +
+      '<span class="chip">' + esc(r.fecha) + '</span>' +
+      '<span class="chip">' + esc(partes.join(' · ') || 'sin datos') + '</span>' +
+      botones +
+      '<button class="bt mini pri" id="bImpOk">Guardar como fácil</button>' +
+      '<span class="chip" id="iDup" style="display:none">ese dia ya tiene sesion de ese tipo</span>';
+    Array.prototype.forEach.call(caja.querySelectorAll('[data-imp]'), function (b) {
+      b.onclick = function () { elegirTipo(b.dataset.imp); };
+    });
+    elegirTipo(tipoImp);
+    document.getElementById('bImpOk').onclick = function () {
+      var x = guardarActividad({ fecha: impActual.fecha, tipo: tipoImp, km: impActual.km,
+        min: impActual.min, fc_media: impActual.fc && impActual.fc.media,
+        fc_max: impActual.fc && impActual.fc.max, zona: impActual.zona }, false);
+      caja.innerHTML = '<span class="chip">' + (x.ok ? 'Importada ✅' : esc(x.error)) + '</span>';
+      pintarTodo();
+    };
+  }
+
+  $('#bImportarAct').onclick = function () { $('#fAct').click(); };
+  $('#fAct').onchange = function () {
+    var f = this.files && this.files[0];
+    if (!f) return;
+    var lector = new FileReader();
+    lector.onload = function () { previaImport(String(lector.result), f.name); };
+    lector.readAsText(f);
+    this.value = '';
+  };
+
+  function abrirAjustes() { pintarAjustes(); $('#ajustes').classList.add('abierta'); }
+  $('#bAjustes').onclick = abrirAjustes;
+  $('#bAjustes2').onclick = abrirAjustes;
+
+  $('#ajCerrar').onclick = function () {
+    $('#ajustes').classList.remove('abierta');
+    pintarTodo();
+  };
+  $('#ajustes').onclick = function (ev) {
+    if (ev.target === this) { this.classList.remove('abierta'); pintarTodo(); }
+  };
+  $('#ajGuardar').onclick = ajustesGuardar;
+  $('#bNuevoCor').onclick = abrirNuevo;
+  $('#nuCerrar').onclick = function () { $('#nuevo').classList.remove('abierta'); };
+  $('#nuCrear').onclick = crearCorredor;
+  ['nuNombre','nuKg','nuCm','nuEdad','nuFcmax','nuReposo','nuDias','nuMin'].forEach(function (id) {
+    $('#' + id).oninput = function () { NU = null; verPlanNuevo(); };
+  });
+  ['nuMeta','nuCorre','nuHist','nuInicio'].forEach(function (id) {
+    $('#' + id).onchange = function () { NU = null; verPlanNuevo(); };
+  });
+  $('#bBorrarCor').onclick = function () {
+    var c = A.corredores().corredores.filter(function (x) { return x.id === atleta; })[0];
+    if (!c || c.base) return;
+    if (!confirm('¿Borrar a ' + c.nombre + ' con su plan y su registro? No se puede deshacer.')) return;
+    var r = A.borrarCorredor(atleta);
+    if (!r.ok) return;
+    atleta = 'jonah'; guardarUI(); pintarTodo(); pintarAjustes();
+  };
+
+  $('#ajBlanco').onclick = function () {
+    if (!confirm('¿Borrar el registro, los ajustes y el perfil de este lugar? El plan queda intacto.')) return;
+    var r = A.reiniciar(atleta);
+    if (!r.ok) {
+      $('#ajAviso').textContent = r.error;
+      $('#ajAviso').className = 'aviso err';
+      return;
+    }
+    A.perfil(atleta, { nombre: 'Atleta', carrera: '', meta: '', notas: '', fc_reposo: '' });
+    pintarTodo();
+    pintarAjustes();
+    $('#ajAviso').textContent = 'Lugar en blanco. Escribe el nombre y la FC de quien lo va a usar.';
+    $('#ajAviso').className = 'aviso ok';
+  };
+
+  $('#bWebhook').onclick = function () {
+    var r = A.webhook($('#aWebhook').value.trim());
+    $('#aW').textContent = r.ok ? (r.webhook ? 'Webhook guardado ✅' : 'Webhook quitado') : r.error;
+    $('#aW').className = 'aviso ' + (r.ok ? 'ok' : 'err');
+  };
+
+  // Manda un aviso de prueba y dice si llego de verdad (no solo si se disparo).
+  $('#bProbar').onclick = function () {
+    if (!$('#aWebhook').value.trim()) {
+      $('#aW').textContent = 'Primero guarda el webhook.';
+      $('#aW').className = 'aviso err';
+      return;
+    }
+    $('#aW').textContent = 'Probando…';
+    $('#aW').className = 'aviso';
+    A.avisar(atleta, 'prueba');
+    var intentos = 0;
+    var mirar = setInterval(function () {
+      intentos++;
+      var st = A.estadoAviso();
+      var ua = st.ultimoAviso;
+      if (ua) {
+        clearInterval(mirar);
+        $('#aW').textContent = ua.ok ? 'Entregado ✅ · ' + new Date(ua.cuando).toLocaleTimeString('es-MX')
+          : 'No llegó ❌ ' + (ua.fallo || '') + '. Queda en cola y se reenvía al abrir la app.';
+        $('#aW').className = 'aviso ' + (ua.ok ? 'ok' : 'err');
+      } else if (intentos >= 6) {
+        clearInterval(mirar);
+        $('#aW').textContent = 'Sin respuesta. Revisa que Tailscale esté prendido en la PC.';
+        $('#aW').className = 'aviso err';
+      }
+    }, 800);
+  };
+
+  $('#bCopiar').onclick = function () {
+    var t = A.docs();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t).then(function () {
+        $('#bCopiar').textContent = 'Copiado ✅';
+        setTimeout(function () { $('#bCopiar').textContent = 'Copiar contrato'; }, 1800);
+      });
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = t; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      ta.remove();
+    }
+  };
+
+  // ----------------------------------------------------------------- arranque
+  cargarUI();
+  // Si la URL trae un paquete del agente, se aplica ANTES del primer pintado.
+  if (/[#&]agent=/.test(location.hash)) {
+    try { A.aplicarHash(); } catch (e) {}
+  }
+  // #r=<direccion del receptor>: deja configurado el telefono sin teclear la direccion a mano.
+  // Va en el hash, que no se manda al servidor, y se borra en cuanto se guarda.
+  // Se aplica al cargar y tambien si el enlace llega con la app ya abierta (hashchange).
+  function aplicarEnlace() {
+    var m = /[#&]r=([^&]+)/.exec(location.hash || '');
+    if (!m) return;
+    var url = '';
+    try { url = decodeURIComponent(m[1]); } catch (e) { url = m[1]; }
+    var r = A.webhook(url);
+    if (!r || !r.ok) return;
+    // &a=<atleta>: deja tambien elegido el corredor, para que el enlace sirva en un telefono nuevo.
+    var ma = /[#&]a=([A-Za-z0-9_\-]{2,20})/.exec(location.hash || '');
+    if (ma) {
+      var id = ma[1];
+      var hay = A.corredores().corredores.some(function (c) { return c.id === id; });
+      if (hay) { atleta = id; guardarUI(); }
+    }
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+    pintarTodo();
+  }
+  aplicarEnlace();
+  window.addEventListener('hashchange', aplicarEnlace);
+
+  pintarTodo();
+
+  // El puente avisa cuando aplica un #agent=... y cuando algo cambia desde fuera.
+  document.addEventListener('agente:listo', pintarTodo);
+  document.addEventListener('agente:cambio', pintarTodo);
+  document.addEventListener('agente:aviso', function () {
+    var st = A.estadoAviso();
+    if (st.ultimoAviso && $('#aWebhook')) {
+      $('#aW').textContent = (st.ultimoAviso.ok ? 'Último aviso entregado ✅ · ' : 'Último aviso no llegó ❌ · ') +
+        new Date(st.ultimoAviso.cuando).toLocaleString('es-MX') +
+        (st.pendientes ? ' · ' + st.pendientes + ' en cola' : '');
+      $('#aW').className = 'aviso ' + (st.ultimoAviso.ok ? 'ok' : 'err');
+    }
+  });
+  window.__refrescar = pintarTodo;
+
+  // Lo que quedo sin salir en la sesion anterior se reenvia cuando hay red.
+  var reenvio = function () {
+    try { if (A.reenviar() > 0) pintarTodo(); } catch (x) {}
+  };
+  setTimeout(reenvio, 2500);
+  window.addEventListener('online', reenvio);
+  // ------------------------------------------------------------ service worker
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' ||
+      location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () { /* sin SW la app sigue funcionando */ });
+    });
+  }
+})();
