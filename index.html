@@ -482,7 +482,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v45';
+  var APP_V = 'v46';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
@@ -764,10 +764,13 @@
       '<input id="iaModelo" placeholder="' + esc(P.modelo) + '" value="' + esc(A.iaModelo() || '') + '"></div>' +
       '<div class="fila"><input id="iaLlave" type="password" placeholder="' + esc(P.llave) + '" autocomplete="off">' +
       '<button id="iaGuardar">' + (tiene ? 'Cambiar' : 'Guardar') + '</button></div>' +
-      (sinPagar ? '<p class="peq" style="margin:6px 0 0">Con éste no hace falta pagar: ' +
-        (prov === 'gemini'
-          ? 'la llave sale gratis en <b>aistudio.google.com/apikey</b> con tu cuenta de Google.'
-          : 'la llave sale gratis en <b>console.groq.com/keys</b>, sin tarjeta.') + '</p>' : '') +
+      '<p class="peq" style="margin:6px 0 0">' + (sinPagar
+        ? 'Con éste no hace falta pagar: ' + (prov === 'gemini'
+            ? 'la llave sale gratis en <b>aistudio.google.com/apikey</b> con tu cuenta de Google.'
+            : 'la llave sale gratis en <b>console.groq.com/keys</b>, sin tarjeta.')
+        : prov === 'openai'
+          ? 'De paga: se paga por uso (unos cuantos centavos por consulta) y la llave sale en <b>platform.openai.com/api-keys</b>. Si no quieres pagar, elige Gemini o Groq.'
+          : 'Para un servidor propio o compatible con OpenAI: pon la dirección de <b>chat/completions</b> en el campo de arriba.') + '</p>' +
       '<p class="peq" id="iaAviso" style="margin:6px 0 0"></p></details>';
   }
 
