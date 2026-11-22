@@ -196,7 +196,7 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
             cambios = {"km": base_km, "larga": base_larga, "calidad": sig.get("calidad"),
                        "nota": f"Repite volumen ({hoy.isoformat()}): no se sube hasta cerrar una semana limpia"}
 
-    return {"atleta": aid, "fcmax": fcmax, "semana": n, "fechas": sem.get("fechas"), "plan": sem,
+    salida = {"atleta": aid, "fcmax": fcmax, "semana": n, "fechas": sem.get("fechas"), "plan": sem,
             "hecho": esta,
             "km": km, "km_prev": km_prev, "pct": pct, "faltan": faltan,
             "fc_alta": [r["fecha"] for r in fc_alta],
@@ -204,6 +204,9 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
             "molestias": [r.get("molestia") for r in molestias],
             "banderas": banderas, "decision": decision, "cambios": cambios,
             "siguiente": sig.get("n") if sig else None}
+    salida["lectura"] = lectura(salida, fcmax)
+    salida["toca"] = toca(salida, fcmax)
+    return salida
 
 
 
@@ -253,8 +256,7 @@ def desempeno(r, fcmax=None):
         elif deriva is not None and deriva <= -DERIVA // 2:
             linea += "; aguantaste mejor de lo que empezaste (-%d ppm en la segunda mitad), " \
                      "senal de que la salida fue conservadora" % int(-deriva)
-        elif s.get("tipo") in ("calidad", "larga"):
-            linea += "; pulso estable durante toda la sesion"
+        # sin las dos mitades del reloj no se afirma estabilidad: el dato no existe
         out.append(linea)
 
     # 3) ritmo del facil contra su ritmo historico de la tabla (si el plan lo trae)
@@ -310,6 +312,110 @@ def desempeno(r, fcmax=None):
     return out
 
 
+def lectura(r, fcmax=None):
+    """Lo que la app pinta como «lo que dice el coach»: comparaciones reales, no el conteo de km.
+
+    Cada frase sale de numeros que el export trae de verdad (ritmo, FC media/max de cada sesion,
+    el techo de Z2 del atleta y, si existe, la FC por mitades). Si falta el dato, la frase no se
+    escribe: nunca se supone estabilidad ni cansancio.
+    """
+    ses = [x for x in (r.get("hecho") or []) if x.get("tipo") != "fuerza"]
+    if not ses:
+        return []
+
+    def rt(x):
+        return ritmo_seg(x.get("min"), x.get("km"))
+
+    def h(x, k="fc_media"):
+        try:
+            return float(x.get(k) or 0) or None
+        except (TypeError, ValueError):
+            return None
+
+    def mm(seg):
+        m, s2 = divmod(int(round(seg)), 60)
+        return "%d:%02d" % (m, s2)
+
+    fcmax = fcmax or r.get("fcmax")
+    techo = TECHOS.get(r.get("atleta"))
+    fac = [x for x in ses if x.get("tipo") == "facil"]
+    lar = [x for x in ses if x.get("tipo") == "larga"]
+    cal = [x for x in ses if x.get("tipo") == "calidad"]
+    out = []
+
+    # A) la larga contra el facil de la misma semana: mismo pulso, mas reloj
+    if lar and fac and rt(lar[-1]) and rt(fac[-1]) and h(lar[-1]) and h(fac[-1]):
+        L, F = lar[-1], fac[-1]
+        d, dh = rt(L) - rt(F), int(h(L) - h(F))
+        if d >= 25:
+            out.append("La larga salió a %s/km contra %s/km del fácil, con solo %+d ppm de pulso: %s "
+                       "más por kilómetro para la misma exigencia. El desgaste vino de la distancia, "
+                       "no del ritmo; si se repite, recorta 1 km y sostén el ritmo en vez de alargar "
+                       "caminando." % (mm(rt(L)), mm(rt(F)), dh, mm(d)))
+        elif d <= -25:
+            out.append("Corriste la larga más rápido que el fácil (%s/km contra %s/km): en la larga el "
+                       "ritmo no es el objetivo, sostener el pulso si." % (mm(rt(L)), mm(rt(F))))
+
+    # B) la larga contra el techo de Z2
+    if lar and h(lar[-1]) and techo:
+        hh = h(lar[-1])
+        if hh >= techo - 1:
+            out.append("La larga se fue entera al techo de Z2 (%d de %d ppm): ahí el cuerpo tira de "
+                       "glucógeno y no construye base. Arranca 10-15 s/km más lento y déjalo 8 o 10 "
+                       "ppm abajo." % (int(hh), techo))
+        elif hh <= techo - 18:
+            out.append("La larga quedó cómoda (%d ppm con techo de %d): sobra margen, la puedes llevar "
+                       "un poco más firme sin salir de Z2." % (int(hh), techo))
+
+    # C) el facil: donde se construye y si se esta pasando
+    if fac and h(fac[-1]):
+        hh = h(fac[-1])
+        pct = int(round(hh / fcmax * 100)) if fcmax else None
+        if techo and hh > techo:
+            out.append("El fácil salió a %d ppm, arriba del techo de Z2 (%d): ese día fue tempo "
+                       "disfrazado de fácil." % (int(hh), techo))
+        elif pct and pct >= 78:
+            out.append("El fácil a %d ppm es %d%% de tu máxima: justo en el borde de poder hablar. "
+                       "Esa es la vara: si no sale una frase completa, vas fuerte."
+                       % (int(hh), pct))
+        elif pct:
+            out.append("El fácil a %d ppm (%d%% de tu máxima) dejó margen para hablar: ese es el pulso "
+                       "donde se construye la base." % (int(hh), pct))
+
+    # D) calidad: cuenta el pico contra el pico del facil, no la media
+    pico_fac = max([h(x, "fc_max") or 0 for x in fac], default=0)
+    for x in cal:
+        mx = h(x, "fc_max")
+        if not mx:
+            continue
+        if pico_fac and mx - pico_fac < 8:
+            out.append("La calidad del %s llegó a %d ppm, casi el mismo pico que tu fácil (%d): los "
+                       "minutos fuertes no se distinguieron del trote. En las series aprieta de "
+                       "verdad; la recuperación es la que va suave."
+                       % (x.get("fecha", "")[5:], int(mx), int(pico_fac)))
+        elif fcmax and mx / fcmax >= 0.90:
+            out.append("La calidad del %s tocó %d ppm (%d%% de tu máxima): el estímulo llegó. Si al día "
+                       "siguiente amaneces con las piernas pesadas, la próxima calidad va más suave."
+                       % (x.get("fecha", "")[5:], int(mx), int(round(mx / fcmax * 100))))
+
+    # E) deriva: solo si el reloj trae las dos mitades
+    for x in ses:
+        try:
+            d = float(x.get("fc_2a")) - float(x.get("fc_1a"))
+        except (TypeError, ValueError):
+            continue
+        if d >= DERIVA:
+            out.append("En la del %s el pulso subió %d ppm en la segunda mitad: el ritmo te ganó al "
+                       "final. Arranca 10 s/km más lento y acaba igual de rápido."
+                       % (x.get("fecha", "")[5:], int(d)))
+    return out[:4]
+
+
+def toca(r, fcmax=None):
+    """El consejo en texto plano, para pintarlo dentro de la app."""
+    return consejo(r, fcmax).replace("- **Lo que toca:** ", "")
+
+
 def consejo(r, fcmax=None):
     """Una sola cosa que hacer, la mas importante de la semana."""
     faltan = r.get("faltan") or []
@@ -318,6 +424,10 @@ def consejo(r, fcmax=None):
         return ("- **Lo que toca:** la larga de %s km, a ritmo en el que puedas hablar. Si el pulso se "
                 "te sube al final, camina un minuto y sigue: la distancia del dia manda mas que el ritmo."
                 % (larga if larga else ""))
+    pct = r.get("pct")
+    if pct and pct > 105 and r.get("decision") in ("seguir", "abierta"):
+        return ("- **Lo que toca:** no sumar km de más: el plan ya sube solo y el extra solo deja la "
+                "larga pegada al techo. Cumple el km de la semana y listo.")
     if r.get("decision") == "recortar":
         return "- **Lo que toca:** la proxima semana baja 10% y sin calidad nueva; la carga subio de mas."
     if r.get("decision") == "congelar":
@@ -346,10 +456,10 @@ def texto(r):
                      f"{temp} | {s.get('esf') or '—'} | {(s.get('molestia') or '').strip() or '—'} |")
     else:
         L.append("Sin sesiones registradas esta semana.")
-    leidas = desempeno(r, r.get("fcmax"))
+    leidas = r.get("lectura") or lectura(r, r.get("fcmax"))
     if leidas:
-        L += ["", "**Como te fue:**"] + leidas
-    L.append(consejo(r, r.get("fcmax")))
+        L += ["", "**Como te fue:**"] + ["- " + x for x in leidas]
+    L.append("- **Lo que toca:** " + (r.get("toca") or toca(r, r.get("fcmax"))))
     L += ["", f"**Decision: {r['decision']}**"]
     if r["banderas"]:
         L += [f"- {b}" for b in r["banderas"]]

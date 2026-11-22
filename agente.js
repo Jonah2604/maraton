@@ -88,6 +88,16 @@
         base.notas[nn] = e.notas[nn].filter(function (x) { return x && typeof x === 'object' && typeof x.texto === 'string'; }).slice(-60);
       }
     }
+    // El analisis que contesto la PC se conserva: sin esto, guardar cualquier otra cosa
+    // (una sesion, el webhook) lo tiraba y la tarjeta del coach quedaba vacia hasta el
+    // siguiente «Pedir analisis».
+    if (e.ultimoFeedback && typeof e.ultimoFeedback === 'object') {
+      base.ultimoFeedback = {};
+      for (var f in e.ultimoFeedback) if (e.ultimoFeedback.hasOwnProperty(f) &&
+          e.ultimoFeedback[f] && typeof e.ultimoFeedback[f] === 'object') {
+        base.ultimoFeedback[f] = e.ultimoFeedback[f];
+      }
+    }
     if (e.perfiles && typeof e.perfiles === 'object') {
       ids.forEach(function (id) {
         var p = e.perfiles[id];

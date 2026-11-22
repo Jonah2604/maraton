@@ -502,7 +502,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v58';
+  var APP_V = 'v59';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
@@ -888,15 +888,36 @@
     }
     cuando.textContent = 'Actualizado ' + (j.cuando || '').replace('T', ' ').slice(0, 16) +
                          (j.semana ? ' · semana ' + j.semana : '');
+    // Lo que el corredor ya ve en «Cómo va la semana» (km del plan, km hechos, semana siguiente)
+    // NO se repite aquí: esta tarjeta es la lectura del coach. Si no hay lectura, no se inventa.
     var out = [];
-    if (j.plan) out.push('<div class="peq"><b>Plan:</b> ' + esc(String(j.plan.km)) + ' km, larga ' +
-      esc(String(j.plan.larga)) + ' km · ' + esc(String(j.plan.calidad || '')) + '</div>');
-    out.push('<div class="peq"><b>Hecho:</b> ' + esc(String(j.km)) + ' km (' + esc(String(j.pct)) +
-             '% del plan)' + (j.faltan && j.faltan.length ? ' · falta ' + esc(j.faltan.join(', ')) : '') + '</div>');
+    var lec = (j.lectura && j.lectura.length) ? j.lectura : lecturaDeTexto(j.texto);
+    lec.forEach(function (x) { out.push('<div class="peq">• ' + esc(x) + '</div>'); });
+    if (j.faltan && j.faltan.length) out.push('<div class="peq"><b>Falta:</b> ' + esc(j.faltan.join(', ')) + '</div>');
     (j.banderas || []).forEach(function (b) { out.push('<div class="peq">• ' + esc(b) + '</div>'); });
-    if (j.siguiente) out.push('<div class="peq">Siguiente: semana ' + esc(String(j.siguiente)) +
-      (j.cambios && j.cambios.km ? ' · ' + esc(String(j.cambios.km)) + ' km, larga ' + esc(String(j.cambios.larga)) : '') + '</div>');
+    var toca = j.toca || tocaDeTexto(j.texto);
+    if (toca) out.push('<div class="peq" style="margin-top:6px"><b>Lo que toca:</b> ' + esc(toca) + '</div>');
+    if (j.siguiente && j.cambios && j.cambios.km) out.push('<div class="peq">Semana ' + esc(String(j.siguiente)) +
+      ' ajustada: ' + esc(String(j.cambios.km)) + ' km, larga ' + esc(String(j.cambios.larga)) + '</div>');
+    if (!lec.length && !toca) out.push('<div class="peq">El análisis llegó sin lectura: registra la sesión completa (km, minutos y pulso) y pide el análisis otra vez.</div>');
     caja.innerHTML = out.join('');
+  }
+
+  // Respaldo para un análisis guardado antes de que existiera el campo «lectura»:
+  // se lee del texto markdown que ya viene en el archivo.
+  function lecturaDeTexto(t) {
+    if (!t || t.indexOf('**Como te fue:**') < 0) return [];
+    var trozo = t.split('**Como te fue:**')[1].split('**Decision')[0];
+    return trozo.split('\n').map(function (x) {
+      return x.replace(/^\s*-\s*/, '').replace(/\*\*/g, '').trim();
+    }).filter(function (x) { return x && x.indexOf('Lo que toca') !== 0; }).slice(0, 4);
+  }
+
+  function tocaDeTexto(t) {
+    if (!t) return '';
+    var i = t.indexOf('**Lo que toca:**');
+    if (i < 0) return '';
+    return t.slice(i + 16).split('\n')[0].replace(/\*\*/g, '').trim();
   }
 
   function pedirFeedback() {

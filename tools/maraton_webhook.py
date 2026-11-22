@@ -218,7 +218,9 @@ def analizar(atleta: str, datos: dict) -> bool:
               "plan": dato.get("plan"), "km": dato.get("km"), "pct": dato.get("pct"),
               "faltan": dato.get("faltan"), "banderas": dato.get("banderas"),
               "decision": dato.get("decision"), "siguiente": dato.get("siguiente"),
-              "cambios": dato.get("cambios"), "texto": dato.get("texto")}
+              "cambios": dato.get("cambios"),
+              "lectura": dato.get("lectura") or [], "toca": dato.get("toca") or "",
+              "texto": dato.get("texto")}
     (CACHE / f"feedback_{atleta}.json").write_text(json.dumps(salida, ensure_ascii=False, indent=1),
                                                    encoding="utf-8")
     print("feedback listo:", atleta, "semana", salida.get("semana"), flush=True)
