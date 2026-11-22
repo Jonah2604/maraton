@@ -151,11 +151,12 @@ class Manejador(BaseHTTPRequestHandler):
             f.write(json.dumps({"recibido": time.strftime("%Y-%m-%dT%H:%M:%S"),
                                 "atleta": atleta, "sesiones": len(sesiones)}) + "\n")
         if atleta in VIGILAR:
-            (CACHE / "ultimo.json").write_text(json.dumps(datos, ensure_ascii=False), encoding="utf-8")
-            try:
-                print("respaldo", atleta, guardar_respaldo(atleta, datos), "sesiones", flush=True)
-            except Exception as fallo:
-                print("respaldo fallo:", fallo, flush=True)
+            if sesiones:      # sin sesiones no se toca el respaldo: se perderia el historial
+                (CACHE / "ultimo.json").write_text(json.dumps(datos, ensure_ascii=False), encoding="utf-8")
+                try:
+                    print("respaldo", atleta, guardar_respaldo(atleta, datos), "sesiones", flush=True)
+                except Exception as fallo:
+                    print("respaldo fallo:", fallo, flush=True)
 
         if atleta in VIGILAR:
             partes_txt = []
@@ -184,6 +185,12 @@ sys.path.insert(0, str(APP / "tools"))
 
 def analizar(atleta: str, datos: dict) -> bool:
     """Corre tools/analizar.py con lo que mando la app y deja el resultado en feedback_<atleta>.json."""
+    # Un aviso sin sesiones es la app abriendose o un guardado a medias: no trae con que
+    # analizar y, si se corre, borra el feedback bueno con una tarjeta vacia. Se conserva el
+    # anterior y se le dice a la app que no hay nada nuevo.
+    if not (datos.get("sesiones") or []):
+        print("aviso sin sesiones: se conserva el feedback anterior de", atleta, flush=True)
+        return False
     perfil = datos.get("perfil") or {}
     plan = datos.get("plan") or {}
     semanas = plan.get("semanas") or []

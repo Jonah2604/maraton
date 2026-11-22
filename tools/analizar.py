@@ -211,6 +211,7 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
             "banderas": banderas, "decision": decision, "cambios": cambios,
             "siguiente": sig.get("n") if sig else None,
             "notas": plan["notas"] if isinstance(plan.get("notas"), list) else []}
+    salida["coach"] = "calculo"        # sin nota, la tarjeta habla el cálculo
     salida["lectura"] = lectura(salida, fcmax)
     salida["toca"] = toca(salida, fcmax)
     # Con nota escrita, la lectura de plantilla no basta: se le pide al coach que razone.

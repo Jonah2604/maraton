@@ -253,13 +253,22 @@ def _semana(datos, hoy=None):
                       "fc_max": r.get("fc_max") or fc.get("max"),
                       "molestia": r.get("molestia")})
     nxt = semanas.get(n + 1) or {}
+    # Sin techo cargado el modelo inventa un rango de pulso y el filtro lo tira: se le da el
+    # calculado (80 % de la FC máxima), marcado como aproximado.
+    techo, aviso = datos.get("techo_z2"), ""
+    try:
+        if not techo and datos.get("fcmax"):
+            techo = int(round(float(datos["fcmax"]) * 0.8))
+            aviso = " (calculado al 80 % de la FC máxima)"
+    except (TypeError, ValueError):
+        techo = None
     return {"semana": n, "fechas": sem.get("fechas"),
             "plan": {"km": sem.get("km"), "larga": sem.get("larga"),
                      "calidades": sem.get("calidades") or sem.get("calidad")},
             "hecho": hecho,
             "km_real": round(sum(float(r.get("km") or 0) for r in hecho), 1),
             "siguiente_semana": {"km": nxt.get("km"), "larga": nxt.get("larga")},
-            "fcmax": datos.get("fcmax"), "techo_z2": datos.get("techo_z2"),
+            "fcmax": datos.get("fcmax"), "techo_z2": techo, "techo_nota": aviso,
             "notas": [{"fecha": x.get("fecha"), "texto": x.get("texto")}
                       for x in (datos.get("notas") or [])[-4:] if isinstance(x, dict) and x.get("texto")]}
 
@@ -288,6 +297,9 @@ def cierra_semana(datos, hoy=None):
             orden = ok[0]
         else:
             dichos.append(ok[0])
+    # Si el filtro se llevó el diagnóstico, la orden igual sirve: vale más que un cierre vacío.
+    if not dichos and orden:
+        dichos = ["La semana se revisó con lo que hay; el detalle numérico no se pudo sostener."]
     return dichos[:3], orden
 
 
