@@ -2075,7 +2075,7 @@ function rellenar(plan, inicio) {
       plan: { inicio: ap.inicio || null, semanas: ap.semanas },
       registro: e.registro, ajustes: e.ajustes, pendientes: e.pendientes.length,
       // El reenvio tambien lleva las notas: es el camino del boton «Pedir analisis».
-      notas: notasDe(quien) };
+      notas: notasDe(quien) };  // el reenvio es el camino del boton «Pedir analisis»
     enviar(e.webhook, JSON.stringify(cuerpo));
     return e.pendientes.length || 1;
   }

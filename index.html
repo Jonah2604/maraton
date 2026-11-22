@@ -890,7 +890,9 @@
       return;
     }
     cuando.textContent = 'Actualizado ' + (j.cuando || '').replace('T', ' ').slice(0, 16) +
-                         (j.semana ? ' · semana ' + j.semana : '');
+                         (j.semana ? ' · semana ' + j.semana : '') +
+                         (j.notas && j.notas.length ? ' · leyó ' + j.notas.length +
+                           (j.notas.length === 1 ? ' nota tuya' : ' notas tuyas') : '');
     // Lo que el corredor ya ve en «Cómo va la semana» (km del plan, km hechos, semana siguiente)
     // NO se repite aquí: esta tarjeta es la lectura del coach. Si no hay lectura, no se inventa.
     var out = [];

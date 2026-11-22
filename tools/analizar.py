@@ -355,15 +355,40 @@ CONSEJO_NOTA = {
 }
 
 
+def notas_vigentes(notas, hoy=None):
+    """Sólo las notas que siguen mandando: las de esta semana o de los últimos 7 días.
+
+    Una molestia de hace tres semanas ya se resolvió o ya cambió el plan; repetirla
+    convierte el consejo en un sermón viejo.
+    """
+    import datetime as _dt
+    hoy = hoy or _dt.date.today()
+    out = []
+    for n in notas[-12:]:
+        if not isinstance(n, dict):
+            continue
+        t = str(n.get("texto") or "").strip()
+        if not t:
+            continue
+        f = str(n.get("fecha") or "")[:10]
+        try:
+            d = _dt.date.fromisoformat(f)
+        except Exception:
+            d = None
+        if d is not None and (hoy - d).days > 7:
+            continue
+        out.append(n)
+    return out
+
+
 def leer_notas(r):
     """Devuelve (textos, temas) de las notas del corredor; la más reciente al final."""
     notas = r.get("notas") or []
     if not isinstance(notas, list):
         return [], []
     textos, temas = [], []
-    for n in notas[-12:]:
-        if not isinstance(n, dict):
-            continue
+    recientes = notas_vigentes(notas)
+    for n in recientes:
         t = str(n.get("texto") or "").strip()
         if not t:
             continue
