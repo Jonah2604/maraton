@@ -409,46 +409,106 @@ def leer_notas(r):
     return textos, temas
 
 
+def _sinacentos(t):
+    t = str(t or "").lower()
+    for a, b in (("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u"), ("ü", "u"), ("ñ", "n")):
+        t = t.replace(a, b)
+    return t
+
+
+def _sesion_cercana(r, nota):
+    """La sesión que la nota puede estar explicando: la del mismo día o la de un día antes."""
+    import datetime as _dt
+    try:
+        f = _dt.date.fromisoformat(str(nota.get("fecha") or "")[:10])
+    except Exception:
+        return None, 0
+    mejor, dist = None, 99
+    for s in (r.get("sesiones") or r.get("registro") or []):
+        if not isinstance(s, dict):
+            continue
+        try:
+            d = _dt.date.fromisoformat(str(s.get("fecha") or s.get("dia") or "")[:10])
+        except Exception:
+            continue
+        dd = abs((d - f).days)
+        if dd <= 1 and dd < dist:
+            mejor, dist = s, dd
+    return mejor, dist
+
+
+def _pulso(s):
+    """(pico, promedio, km_min) de una sesion, con lo que traiga."""
+    fc = s.get("fc") or {}
+    pico = fc.get("max") if isinstance(fc, dict) else None
+    prom = fc.get("prom") or fc.get("avg") if isinstance(fc, dict) else None
+    km, minu = s.get("km"), s.get("min") or s.get("minutos")
+    ritmo = None
+    try:
+        if km and minu:
+            ritmo = float(minu) / float(km)
+    except Exception:
+        ritmo = None
+    return pico, prom, ritmo
+
+
 def lectura_notas(r):
-    """Las frases que sólo se pueden decir leyendo lo que el corredor escribió."""
+    """La nota cruzada con la sesión: qué pasó y qué implica.
+
+    Citar la nota y pegar un consejo genérico es «copy paste»: al corredor no le sirve.
+    Aquí se dice qué sesión toca la nota, qué números trae y qué se concluye.
+    """
     textos, temas = leer_notas(r)
-    out = []
-    for clave in temas:
-        palabras = dict(TEMAS_NOTA).get(clave, ())
-        ejemplo = ""
-        for _, t in reversed(textos):
-            plano = t.lower()
-            for normal, simple in (("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u"), ("ñ", "n")):
-                plano = plano.replace(normal, simple)
-            if any(w.lower() in plano for w in palabras):
-                ejemplo = t
-                break
-        dicho = ('Dijiste «%s»: ' % ejemplo[:110]) if ejemplo else ""
-        if clave == "molestia":
-            out.append(dicho + "eso cambia la sesión, no la semana. Lo que duele no se entrena: "
-                               "se cambia por bici o elíptica y, si irradia, se corta.")
-        elif clave == "clima":
-            out.append(dicho + "con eso la sesión se mueve de día o se acorta; el plan se cumple "
-                               "cuando se puede, no a fuerza.")
-        elif clave == "agenda":
-            out.append(dicho + "los días que no salen no se pagan al doble: se cierra la semana "
-                               "con lo que toca y se sigue.")
-        elif clave == "fatiga":
-            out.append(dicho + "entrenar con eso encima no suma: la sesión fuerte se cambia por "
-                               "trote suave y se llega entero a la siguiente.")
-        elif clave == "animo":
-            out.append(dicho + "ese día cuenta igual si sales a trotar; baja la exigencia, no el hábito.")
-        elif clave == "futbol":
-            out.append(dicho + "el fútbol cuenta como calidad: con eso la calidad de la semana ya "
-                               "está hecha, no se suma otra.")
-        elif clave == "fuerza":
-            out.append(dicho + "la fuerza va después del trote o en día aparte: antes de una calidad "
-                               "te quita las piernas.")
-        elif clave == "alimentacion":
-            out.append(dicho + "en las largas pasa de 90 minutos eso se nota al final: come antes y "
-                               "lleva agua, o el pulso sube solo y parece falta de forma.")
-    # Una sola frase de la nota: la segunda ya es relleno y el corredor la lee como sermón.
-    return out[:1]
+    if not temas:
+        return []
+    clave = temas[0]
+    palabras = dict(TEMAS_NOTA).get(clave, ())
+    nota = None
+    for n in reversed(r.get("notas") or []):
+        if isinstance(n, dict) and any(w.lower() in _sinacentos(n.get("texto")) for w in palabras):
+            nota = n
+            break
+    s, dist = _sesion_cercana(r, nota or {})
+    pico, prom, ritmo = _pulso(s or {})
+    tipo = str((s or {}).get("tipo") or "").lower()
+    dias = {0: "ese mismo día", 1: "al día siguiente"}.get(dist, "")
+    cuando = ("la sesión de %s" % tipo) if tipo else "la sesión"
+    cuando += (" " + dias) if dias else ""
+    cifras = []
+    if pico:
+        cifras.append("pico %s ppm" % pico)
+    if prom:
+        cifras.append("promedio %s" % prom)
+    if ritmo:
+        m, sg = divmod(int(round(ritmo * 60)), 60)
+        cifras.append("ritmo %d:%02d/km" % (m, sg))
+    medida = ("esa sesión trae " + ", ".join(cifras)) if cifras else "esa sesión y la nota no coinciden en números"
+
+    if clave == "fatiga":
+        # El peso no esta en el reloj sino en la vida: pulso alto con la misma ruta = el cuerpo
+        # cobrando la deuda de sueño. Se dice eso, no se repite lo que el corredor ya escribio.
+        if pico:
+            out = ("La nota va con %s y %s: con eso encima, el pulso sube más rápido a la misma "
+                   "velocidad y eso es deuda de descanso, no falta de forma. La próxima calidad se "
+                   "cambia por trote suave y no se suben km." % (cuando, medida))
+        else:
+            out = ("La nota va con %s, aunque ahí no hay pulso que comprar: la salida no suma, y la "
+                   "calidad siguiente se cambia por trote suave." % cuando)
+    elif clave == "molestia":
+        out = ("Lo que anotaste te toca %s y %s. Eso no se entrena: se cambia por bici o elíptica; "
+               "si irradia, se corta." % (cuando, medida))
+    elif clave == "clima":
+        out = ("Lo que anotaste te toca %s y %s: la sesión se mueve de día o se acorta, el plan se "
+               "cumple cuando se puede." % (cuando, medida))
+    elif clave == "agenda":
+        out = ("Lo que anotaste te toca %s y %s: cierra la semana con lo que toca, no dobles sesión."
+               % (cuando, medida))
+    elif clave == "alimentacion":
+        out = ("Lo que anotaste te toca %s y %s: sin agua ni comida el pulso sube solo y parece falta "
+               "de forma cuando es la panza vacía." % (cuando, medida))
+    else:
+        out = "Tu nota va con %s y %s." % (cuando, medida)
+    return [out]
 
 
 def consejo_nota(r):
