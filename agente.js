@@ -1934,6 +1934,9 @@ function rellenar(plan, inicio) {
       var quien = (id && e.registro[id]) ? id : null;
       var cuerpo = { api: VERSION, cuando: new Date().toISOString(), motivo: motivo || 'cambio',
         atleta: quien, registro: e.registro, ajustes: e.ajustes };
+      // Las notas viajan con CADA aviso. Antes solo iban en el export a mano, asi que el
+      // analisis que pedia desde el telefono nunca las veia por mucho que las escribiera.
+      if (quien) cuerpo.notas = notasDe(quien);
       if (quien) {
         cuerpo.sesiones = e.registro[quien].slice();
         cuerpo.perfil = e.perfiles[quien] || null;

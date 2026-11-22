@@ -191,7 +191,9 @@ def analizar(atleta: str, datos: dict) -> bool:
                          "carrera": perfil.get("carrera"), "meta": perfil.get("meta"),
                          "zonas": perfil.get("zonas"), "inicio": plan.get("inicio")},
               "inicio": plan.get("inicio"), "semanas": semanas,
-              "registro": datos.get("sesiones") or []}
+              "registro": datos.get("sesiones") or [],
+              # lo que el corredor escribio en la app; sin esto el analisis contesta a ciegas
+              "notas": datos.get("notas") or []}
     fuente = CACHE / f"export_{atleta}.json"
     fuente.write_text(json.dumps(export, ensure_ascii=False), encoding="utf-8")
     try:
