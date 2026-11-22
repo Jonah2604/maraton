@@ -502,7 +502,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v61';
+  var APP_V = 'v62';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
@@ -670,6 +670,9 @@
     else if (r.nota.dias_bloqueados.length) av += ' Esos días no se programan.';
     $('#ntAviso').textContent = av;
     pintarNotas();
+    // La nota se manda sola a la PC: el analisis se recalcula con ella sin que el corredor
+    // tenga que ir a apretar «Pedir analisis» y adivinar si ya la leyo.
+    if (typeof pedirFeedback === 'function') pedirFeedback();
   }
 
   function pintarHoy() {

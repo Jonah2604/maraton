@@ -1542,6 +1542,16 @@ function rellenar(plan, inicio) {
       return r;
     },
 
+    // Para pruebas: de que atleta son las notas guardadas y cuantas hay.
+    // El boton «Pedir analisis»: reenvia el estado completo a la PC.
+    pedirAnalisis: function () { return reenviarPendientes(true); },
+
+    estadoGuardado: function () {
+      var e = cargar(); var o = {};
+      for (var k in (e.notas || {})) if (e.notas.hasOwnProperty(k)) o[k] = e.notas[k].length;
+      return o;
+    },
+
     leerNotas: function (id) {
       if (!idValido(id)) return { ok: false, error: 'atleta desconocido: ' + id };
       return { ok: true, notas: notasDe(id) };
@@ -2063,7 +2073,9 @@ function rellenar(plan, inicio) {
     var cuerpo = { api: VERSION, cuando: new Date().toISOString(), motivo: 'reenvio',
       atleta: quien, sesiones: e.registro[quien].slice(), perfil: e.perfiles[quien] || null,
       plan: { inicio: ap.inicio || null, semanas: ap.semanas },
-      registro: e.registro, ajustes: e.ajustes, pendientes: e.pendientes.length };
+      registro: e.registro, ajustes: e.ajustes, pendientes: e.pendientes.length,
+      // El reenvio tambien lleva las notas: es el camino del boton «Pedir analisis».
+      notas: notasDe(quien) };
     enviar(e.webhook, JSON.stringify(cuerpo));
     return e.pendientes.length || 1;
   }
