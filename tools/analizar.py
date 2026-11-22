@@ -223,7 +223,7 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
                 salida["lectura"] = lec
             if toc:
                 salida["toca"] = toc
-            salida["coach"] = "modelo" if lec else "calculo"
+            salida["coach"] = "modelo" if (lec or toc) else "calculo"
         except Exception as fallo:
             print("coach ia no corrio:", type(fallo).__name__, flush=True)
     return salida

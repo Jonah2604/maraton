@@ -502,7 +502,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v66';
+  var APP_V = 'v67';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
@@ -904,6 +904,15 @@
     if (toca) out.push('<div class="peq" style="margin-top:6px"><b>Lo que toca:</b> ' + esc(toca) + '</div>');
     if (j.siguiente && j.cambios && j.cambios.km) out.push('<div class="peq">Semana ' + esc(String(j.siguiente)) +
       ' ajustada: ' + esc(String(j.cambios.km)) + ' km, larga ' + esc(String(j.cambios.larga)) + '</div>');
+    // Cierre de semana: lo que el coach decidió mirando la semana entera. Va aparte del
+    // análisis del día para no mezclar las dos cosas; el corredor ve las dos.
+    var ci = j.cierre || {};
+    if (ci.lectura && ci.lectura.length) {
+      out.push('<div class="peq" style="margin-top:8px"><b>Cierre de la semana ' + esc(String(ci.semana || '')) +
+               ':</b></div>');
+      ci.lectura.forEach(function (x) { out.push('<div class="peq">• ' + esc(x) + '</div>'); });
+      if (ci.toca) out.push('<div class="peq"><b>Lo que toca:</b> ' + esc(ci.toca) + '</div>');
+    }
     if (!lec.length && !toca) out.push('<div class="peq">El análisis llegó sin lectura: registra la sesión completa (km, minutos y pulso) y pide el análisis otra vez.</div>');
     caja.innerHTML = out.join('');
   }

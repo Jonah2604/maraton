@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import subprocess
+from datetime import date
 import sys
 import threading
 import time
@@ -178,6 +179,9 @@ class Manejador(BaseHTTPRequestHandler):
         return self._responder(200, {"ok": True, "atleta": atleta})
 
 
+sys.path.insert(0, str(APP / "tools"))
+
+
 def analizar(atleta: str, datos: dict) -> bool:
     """Corre tools/analizar.py con lo que mando la app y deja el resultado en feedback_<atleta>.json."""
     perfil = datos.get("perfil") or {}
@@ -213,6 +217,18 @@ def analizar(atleta: str, datos: dict) -> bool:
         return False
     if isinstance(dato, list):
         dato = dato[0] if dato else {}
+    # Cierre de semana: el domingo (o el primer dia de la semana siguiente) el coach revisa
+    # los entrenamientos completos y decide si la semana que viene se toca. Mismo rol que
+    # el analisis de la nota; si no hay modelo, no estorba.
+    semana = {}
+    try:
+        import coach_ia
+        lec, toc = coach_ia.cierra_semana(export, date.today())
+        if lec or toc:
+            semana = {"lectura": lec, "toca": toc, "cuando": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                      "semana": coach_ia._semana(export)["semana"]}
+    except Exception as fallo:
+        print("cierre de semana no corrio:", type(fallo).__name__, flush=True)
     salida = {"ok": True, "cuando": time.strftime("%Y-%m-%dT%H:%M:%S"),
               "t": int(time.time() * 1000),   # ms epoch: para comparar sin lios de zona
               "atleta": atleta,
@@ -222,7 +238,7 @@ def analizar(atleta: str, datos: dict) -> bool:
               "decision": dato.get("decision"), "siguiente": dato.get("siguiente"),
               "cambios": dato.get("cambios"),
               "lectura": dato.get("lectura") or [], "toca": dato.get("toca") or "",
-              "texto": dato.get("texto")}
+              "texto": dato.get("texto"), "coach": dato.get("coach"), "cierre": semana}
     (CACHE / f"feedback_{atleta}.json").write_text(json.dumps(salida, ensure_ascii=False, indent=1),
                                                    encoding="utf-8")
     print("feedback listo:", atleta, "semana", salida.get("semana"), flush=True)

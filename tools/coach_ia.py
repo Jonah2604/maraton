@@ -16,6 +16,7 @@ Sin llave de modelo, esto simplemente no corre: la app se queda con el análisis
 de siempre. Nunca se rompe el análisis por falta de cuota.
 """
 import json
+from datetime import date
 import os
 import re
 import time
@@ -29,6 +30,11 @@ ORDEN = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"),
 CACHE = os.path.join(os.environ.get("LOCALAPPDATA", ""), "hermes", "cache", "maraton")
 
 # El modelo que contesta; se puede cambiar sin tocar código.
+try:
+    from analizar import INICIO, parse_fecha, semana_de
+except Exception:      # corrido desde tools/
+    from .analizar import INICIO, parse_fecha, semana_de
+
 MODELO = os.environ.get("MARATON_COACH_MODELO") or "deepseek-chat"
 URL = os.environ.get("MARATON_COACH_URL") or "https://api.deepseek.com/v1/chat/completions"
 ESPERA = 25          # s; si tarda más, la app se queda con el análisis de cálculo
@@ -197,6 +203,92 @@ def coach(datos, ahora=None):
             toca = lectura.pop(k)
             break
     return lectura[:TOPE - 1] if toca else lectura[:TOPE], toca
+
+
+REGLAS_SEMANA = """
+Eres coach de corredores con 25 años de experiencia: trail de montaña y asfalto, fisiología
+del esfuerzo, zonas y pulso, nutrición e hidratación, sueño y recuperación, fuerza
+complementaria y lesiones típicas del corredor. Le hablas de tú, en español de México.
+
+Cierra la semana con el corredor: ya corrieron lo que corrieron y ahora toca decidir si la
+semana que viene se toca o no. Te doy el plan de la semana (km y larga), lo que de verdad
+hizo (km, sesiones, pulso medio y máximo, molestias) y lo que escribió en sus notas.
+
+Contesta exactamente así, cuatro líneas, cada una empezando con el rótulo:
+
+SEMANA: si la semana se cumplió o no, con los km reales contra los del plan.
+PULSO: qué dice el pulso de la semana (si la calidad o la larga se le fueron de zona, si el
+  pulso subió para el mismo ritmo) y si eso fue carga o fue cansancio. Si faltan números,
+  dilo en vez de suponer.
+AJUSTE: qué se cambia la semana que viene y por qué. Puede ser «nada» si la semana salió
+  bien: es una respuesta válida y muchas veces la correcta.
+ORDEN: una frase en imperativo con lo que tiene que hacer en las próximas sesiones.
+
+Reglas que no puedes romper: no subir el volumen más del 20 % de una semana a otra; si la
+semana pasó del 90 % del pulso máximo, la siguiente no sube; con molestia, se iguala o se
+baja y no se busca calidad; nunca pasar el tope de la larga; la semana de la carrera no se
+toca. No reescribas el plan entero ni cambies fechas. No inventes números que no estén en
+los datos. Nada de «es importante», «recuerda que» ni sermones.
+
+Datos:
+"""
+
+
+def _semana(datos, hoy=None):
+    """Lo que ve el modelo para cerrar la semana: la semana, lo hecho y las notas."""
+    hoy = hoy or date.today()
+    semanas = {s.get("n"): s for s in (datos.get("semanas") or []) if isinstance(s, dict)}
+    ini = parse_fecha(datos.get("inicio")) or INICIO
+    tope = max(semanas) if semanas else 21
+    n = semana_de(hoy, ini, tope)
+    sem = semanas.get(n) or {}
+    filas = [r for r in (datos.get("registro") or []) if isinstance(r, dict)
+             and parse_fecha(r.get("fecha")) and semana_de(parse_fecha(r["fecha"]), ini, tope) == n]
+    hecho = []
+    for r in filas:
+        fc = r.get("fc") if isinstance(r.get("fc"), dict) else {}
+        hecho.append({"fecha": r.get("fecha"), "tipo": r.get("tipo"), "km": r.get("km"),
+                      "min": r.get("min") or r.get("minutos"),
+                      "fc_media": r.get("fc_media") or fc.get("prom") or fc.get("avg"),
+                      "fc_max": r.get("fc_max") or fc.get("max"),
+                      "molestia": r.get("molestia")})
+    nxt = semanas.get(n + 1) or {}
+    return {"semana": n, "fechas": sem.get("fechas"),
+            "plan": {"km": sem.get("km"), "larga": sem.get("larga"),
+                     "calidades": sem.get("calidades") or sem.get("calidad")},
+            "hecho": hecho,
+            "km_real": round(sum(float(r.get("km") or 0) for r in hecho), 1),
+            "siguiente_semana": {"km": nxt.get("km"), "larga": nxt.get("larga")},
+            "fcmax": datos.get("fcmax"), "techo_z2": datos.get("techo_z2"),
+            "notas": [{"fecha": x.get("fecha"), "texto": x.get("texto")}
+                      for x in (datos.get("notas") or [])[-4:] if isinstance(x, dict) and x.get("texto")]}
+
+
+def cierra_semana(datos, hoy=None):
+    """Cierre de semana: (lectura, toca). Vacío si no hay con qué contestar."""
+    if not isinstance(datos, dict) or not datos.get("registro"):
+        return [], ""
+    rec = _semana(datos, hoy)
+    if not rec["hecho"]:
+        return [], ""
+    txt = pide(REGLAS_SEMANA + json.dumps(rec, ensure_ascii=False, default=str))
+    if not txt:
+        return [], ""
+    dichos, orden = [], ""
+    for linea in txt.splitlines():
+        linea = linea.strip()
+        if not linea:
+            continue
+        m = re.match(r"(SEMANA|PULSO|AJUSTE|ORDEN)\s*:\s*(.+)", linea, re.I)
+        etiqueta, cuerpo = (m.group(1).upper(), m.group(2)) if m else ("", linea)
+        ok = permitido([cuerpo], rec)
+        if not ok:
+            continue
+        if etiqueta == "ORDEN":
+            orden = ok[0]
+        else:
+            dichos.append(ok[0])
+    return dichos[:3], orden
 
 
 if __name__ == "__main__":
