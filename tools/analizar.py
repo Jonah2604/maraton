@@ -424,7 +424,9 @@ def _sesion_cercana(r, nota):
     except Exception:
         return None, 0
     mejor, dist = None, 99
-    for s in (r.get("sesiones") or r.get("registro") or []):
+    # La lista se llama distinto segun de donde venga el dict: «hecho» dentro de analiza(),
+    # «sesiones» o «registro» cuando llega armado desde el webhook.
+    for s in (r.get("hecho") or r.get("sesiones") or r.get("registro") or []):
         if not isinstance(s, dict):
             continue
         try:
@@ -438,10 +440,16 @@ def _sesion_cercana(r, nota):
 
 
 def _pulso(s):
-    """(pico, promedio, km_min) de una sesion, con lo que traiga."""
+    """(pico, promedio, ritmo min/km) de una sesion, con lo que traiga."""
     fc = s.get("fc") or {}
-    pico = fc.get("max") if isinstance(fc, dict) else None
-    prom = fc.get("prom") or fc.get("avg") if isinstance(fc, dict) else None
+    pico = None
+    prom = None
+    if isinstance(fc, dict):
+        pico = fc.get("max") or fc.get("maxima")
+        prom = fc.get("prom") or fc.get("avg") or fc.get("media")
+    # el analisis ya normalizado usa fc_max / fc_media
+    pico = pico or s.get("fc_max")
+    prom = prom or s.get("fc_media")
     km, minu = s.get("km"), s.get("min") or s.get("minutos")
     ritmo = None
     try:
@@ -472,8 +480,8 @@ def lectura_notas(r):
     pico, prom, ritmo = _pulso(s or {})
     tipo = str((s or {}).get("tipo") or "").lower()
     dias = {0: "ese mismo día", 1: "al día siguiente"}.get(dist, "")
-    cuando = ("la sesión de %s" % tipo) if tipo else "la sesión"
-    cuando += (" " + dias) if dias else ""
+    cuando = ("la %s" % tipo) if tipo else "esa sesión"
+    cuando += (" de " + dias) if dias else ""
     cifras = []
     if pico:
         cifras.append("pico %s ppm" % pico)
@@ -482,21 +490,22 @@ def lectura_notas(r):
     if ritmo:
         m, sg = divmod(int(round(ritmo * 60)), 60)
         cifras.append("ritmo %d:%02d/km" % (m, sg))
-    medida = ("esa sesión trae " + ", ".join(cifras)) if cifras else "esa sesión y la nota no coinciden en números"
+    medida = (", ".join(cifras)) if cifras else ""
 
     if clave == "fatiga":
         # El peso no esta en el reloj sino en la vida: pulso alto con la misma ruta = el cuerpo
         # cobrando la deuda de sueño. Se dice eso, no se repite lo que el corredor ya escribio.
+        # Diagnostico, no receta: la accion va en «Lo que toca», si no la tarjeta lo dice dos veces.
         if pico:
-            out = ("La nota va con %s y %s: con eso encima, el pulso sube más rápido a la misma "
-                   "velocidad y eso es deuda de descanso, no falta de forma. La próxima calidad se "
-                   "cambia por trote suave y no se suben km." % (cuando, medida))
+            out = ("Tu nota va con %s: %s. Pulso alto para el mismo ritmo es deuda de descanso, "
+                   "no falta de forma." % (cuando, medida))
+            out = out.replace(": .", ".")
         else:
-            out = ("La nota va con %s, aunque ahí no hay pulso que comprar: la salida no suma, y la "
-                   "calidad siguiente se cambia por trote suave." % cuando)
+            out = ("Tu nota va con %s, aunque esa sesión no trae pulso con qué comparar: el día "
+                   "queda como está y se corrige el sueño." % cuando)
     elif clave == "molestia":
-        out = ("Lo que anotaste te toca %s y %s. Eso no se entrena: se cambia por bici o elíptica; "
-               "si irradia, se corta." % (cuando, medida))
+        out = ("Lo que anotaste va con %s: %s. Molestia en carrera no se entrena, se cambia por "
+               "bici o elíptica; si irradia, se corta." % (cuando, medida))
     elif clave == "clima":
         out = ("Lo que anotaste te toca %s y %s: la sesión se mueve de día o se acorta, el plan se "
                "cumple cuando se puede." % (cuando, medida))
