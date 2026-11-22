@@ -1592,7 +1592,8 @@ function rellenar(plan, inicio) {
           atleta: { id: id, nombre: a.nombre, edad: a.edad, fcmax: a.fcmax, fc_reposo: a.fc_reposo,
                     zonas: a.zonas, carrera: a.carrera, meta: a.meta, inicio: a.inicio || null },
           inicio: a.inicio || null,
-          semanas: a.semanas, registro: e.registro[id], ajustes: e.ajustes[id]
+          semanas: a.semanas, registro: e.registro[id], ajustes: e.ajustes[id],
+          notas: notasDe(id)          // lo que el corredor escribio: el analisis tiene que leerlo
         }) };
       }
       return { ok: true, json: JSON.stringify({ api: VERSION, exportado: new Date().toISOString(),

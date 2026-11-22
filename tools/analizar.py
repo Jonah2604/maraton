@@ -59,10 +59,15 @@ def ritmo(min_, km):
 def carga_export(ruta):
     d = json.loads(Path(ruta).read_text(encoding="utf-8-sig"))
     if "atletas" in d:                       # paquete completo
-        return {k: v for k, v in d["atletas"].items()}, d.get("registro", {})
+        # las notas del corredor viajan pegadas a su plan: el analisis las tiene que leer
+        notas = d.get("notas") or {}
+        return ({k: {**v, "notas": notas.get(k) or []} for k, v in d["atletas"].items()},
+                d.get("registro", {}))
     if "atleta" in d:                        # export de un atleta
         aid = d["atleta"].get("id")
-        return {aid: {**d["atleta"], "semanas": d.get("semanas", [])}}, {aid: d.get("registro", [])}
+        return ({aid: {**d["atleta"], "semanas": d.get("semanas", []),
+                       "notas": d["notas"] if isinstance(d.get("notas"), list) else []}},
+                {aid: d.get("registro", [])})
     raise SystemExit("no reconozco el JSON: falta 'atletas' o 'atleta'")
 
 
@@ -203,7 +208,8 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
             "calurosas": [{"fecha": r["fecha"], "temp": r["temp"]} for r in calurosas],
             "molestias": [r.get("molestia") for r in molestias],
             "banderas": banderas, "decision": decision, "cambios": cambios,
-            "siguiente": sig.get("n") if sig else None}
+            "siguiente": sig.get("n") if sig else None,
+            "notas": plan["notas"] if isinstance(plan.get("notas"), list) else []}
     salida["lectura"] = lectura(salida, fcmax)
     salida["toca"] = toca(salida, fcmax)
     return salida
@@ -312,6 +318,121 @@ def desempeno(r, fcmax=None):
     return out
 
 
+
+# Lo que el corredor escribe en las notas cambia la lectura: una molestia o un dia que no
+# pudo salir explica el numero mejor que el numero solo. Se busca por tema, sin acentos ni
+# mayusculas, y cada tema tiene su propia frase; si no hay nota del tema, no se escribe nada.
+TEMAS_NOTA = (
+    ("molestia", ("molestia", "dolor", "duele", "ciatica", "rodilla", "tobillo", "planta", "aquiles",
+                  "espalda", "tirón", "tiron", "calambre", "inflamad")),
+    ("clima", ("lluvia", "llovio", "llovió", "calor", "viento", "frio", "frío", "humedad", "sol fuerte")),
+    ("agenda", ("trabajo", "turno", "viaje", "familia", "reunion", "reunión", "cita", "no pude",
+                "no sali", "no salí", "se me hizo tarde", "ocupado")),
+    ("fatiga", ("cansad", "fatiga", "agotad", "sin fuerzas", "desvelad", "mal dorm", "sueño", "sueño atrasado")),
+    ("animo", ("desanimad", "flojera", "estres", "estrés", "ansiedad", "motivacion", "motivación")),
+    ("futbol", ("futbol", "fútbol", "fut", "partido")),
+    ("fuerza", ("pesas", "gym", "gimnasio", "fuerza", "crossfit")),
+    ("alimentacion", ("ayuno", "no comi", "no comí", "desayun", "comida", "hidrat", "agua", "sal", "gel")),
+)
+CONSEJO_NOTA = {
+    "molestia": ("Si la molestia sigue el día de la sesión, no se corre: se cambia por bici o elíptica "
+                 "y se revisa. Dolor que irradia corta la sesión, no se aguanta."),
+    "clima": ("El clima no se pelea: esa sesión se mueve de día o se acorta; se pierde el estímulo, "
+              "no la semana."),
+    "agenda": ("Si un día no se pudo salir, no se recupera al doble: se corre lo que toca y se cierra "
+               "la semana sin deuda."),
+    "fatiga": ("Con esa fatiga encima, la sesión fuerte se cambia por trote suave o se recorta: "
+               "entrenar cansado no suma, sólo arrastra la siguiente semana."),
+    "animo": ("Los días flojos cuentan igual si sales a trotar: bajar la exigencia, no el hábito."),
+    "futbol": ("El fútbol cuenta como calidad: si lo juegas, la calidad de la semana ya está hecha y "
+               "no se suma otra."),
+    "fuerza": ("La fuerza va después del trote o en día aparte: antes de una calidad te quita las "
+               "piernas que necesitas."),
+    "alimentacion": ("En las largas de más de 90 minutos come antes de salir y lleva agua: sin eso el "
+                     "pulso sube solo al final y parece falta de forma."),
+}
+
+
+def leer_notas(r):
+    """Devuelve (textos, temas) de las notas del corredor; la más reciente al final."""
+    notas = r.get("notas") or []
+    if not isinstance(notas, list):
+        return [], []
+    textos, temas = [], []
+    for n in notas[-12:]:
+        if not isinstance(n, dict):
+            continue
+        t = str(n.get("texto") or "").strip()
+        if not t:
+            continue
+        textos.append((n.get("fecha") or "", t))
+        plano = t.lower()
+        for normal, palabras in ((("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u"), ("ñ", "n"))):
+            plano = plano.replace(normal, palabras)
+        for clave, palabras_tema in TEMAS_NOTA:
+            if clave in temas:
+                continue
+            for w in palabras_tema:
+                wl = w.lower()
+                for normal, simple in (("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u"), ("ñ", "n")):
+                    wl = wl.replace(normal, simple)
+                if wl in plano:
+                    temas.append(clave)
+                    break
+    return textos, temas
+
+
+def lectura_notas(r):
+    """Las frases que sólo se pueden decir leyendo lo que el corredor escribió."""
+    textos, temas = leer_notas(r)
+    out = []
+    for clave in temas:
+        palabras = dict(TEMAS_NOTA).get(clave, ())
+        ejemplo = ""
+        for _, t in reversed(textos):
+            plano = t.lower()
+            for normal, simple in (("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u"), ("ñ", "n")):
+                plano = plano.replace(normal, simple)
+            if any(w.lower() in plano for w in palabras):
+                ejemplo = t
+                break
+        dicho = ('Dijiste «%s»: ' % ejemplo[:110]) if ejemplo else ""
+        if clave == "molestia":
+            out.append(dicho + "eso cambia la sesión, no la semana. Lo que duele no se entrena: "
+                               "se cambia por bici o elíptica y, si irradia, se corta.")
+        elif clave == "clima":
+            out.append(dicho + "con eso la sesión se mueve de día o se acorta; el plan se cumple "
+                               "cuando se puede, no a fuerza.")
+        elif clave == "agenda":
+            out.append(dicho + "los días que no salen no se pagan al doble: se cierra la semana "
+                               "con lo que toca y se sigue.")
+        elif clave == "fatiga":
+            out.append(dicho + "entrenar con eso encima no suma: la sesión fuerte se cambia por "
+                               "trote suave y se llega entero a la siguiente.")
+        elif clave == "animo":
+            out.append(dicho + "ese día cuenta igual si sales a trotar; baja la exigencia, no el hábito.")
+        elif clave == "futbol":
+            out.append(dicho + "el fútbol cuenta como calidad: con eso la calidad de la semana ya "
+                               "está hecha, no se suma otra.")
+        elif clave == "fuerza":
+            out.append(dicho + "la fuerza va después del trote o en día aparte: antes de una calidad "
+                               "te quita las piernas.")
+        elif clave == "alimentacion":
+            out.append(dicho + "en las largas pasa de 90 minutos eso se nota al final: come antes y "
+                               "lleva agua, o el pulso sube solo y parece falta de forma.")
+    # Una sola frase de la nota: la segunda ya es relleno y el corredor la lee como sermón.
+    return out[:1]
+
+
+def consejo_nota(r):
+    """Un solo consejo, el del tema más importante que haya escrito el corredor."""
+    _, temas = leer_notas(r)
+    for clave in temas:
+        if clave in CONSEJO_NOTA:
+            return CONSEJO_NOTA[clave]
+    return ""
+
+
 def lectura(r, fcmax=None):
     """Lo que la app pinta como «lo que dice el coach»: comparaciones reales, no el conteo de km.
 
@@ -321,7 +442,7 @@ def lectura(r, fcmax=None):
     """
     ses = [x for x in (r.get("hecho") or []) if x.get("tipo") != "fuerza"]
     if not ses:
-        return []
+        return lectura_notas(r)
 
     def rt(x):
         return ritmo_seg(x.get("min"), x.get("km"))
@@ -341,7 +462,8 @@ def lectura(r, fcmax=None):
     fac = [x for x in ses if x.get("tipo") == "facil"]
     lar = [x for x in ses if x.get("tipo") == "larga"]
     cal = [x for x in ses if x.get("tipo") == "calidad"]
-    out = []
+
+    out = lectura_notas(r)
 
     # A) la larga contra el facil de la misma semana: mismo pulso, mas reloj
     if lar and fac and rt(lar[-1]) and rt(fac[-1]) and h(lar[-1]) and h(fac[-1]):
@@ -412,7 +534,14 @@ def lectura(r, fcmax=None):
 
 
 def toca(r, fcmax=None):
-    """El consejo en texto plano, para pintarlo dentro de la app."""
+    """El consejo en texto plano, para pintarlo dentro de la app.
+
+    Si el corredor escribio algo (molestia, clima, agenda, fatiga), eso manda sobre la
+    recomendacion que sale solo de los numeros.
+    """
+    ajeno = consejo_nota(r)
+    if ajeno:
+        return ajeno
     return consejo(r, fcmax).replace("- **Lo que toca:** ", "")
 
 
