@@ -15,6 +15,7 @@ Reglas (conservadoras a proposito: hay ciatica, tobillo y rodilla en el historia
   FC media de las faciles sobre Z2   -> no sube volumen aunque haya cumplido
 """
 import json
+import os
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -212,6 +213,19 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
             "notas": plan["notas"] if isinstance(plan.get("notas"), list) else []}
     salida["lectura"] = lectura(salida, fcmax)
     salida["toca"] = toca(salida, fcmax)
+    # Con nota escrita, la lectura de plantilla no basta: se le pide al coach que razone.
+    # Si no hay llave o no contesta, se queda lo calculado: el análisis nunca se cae por eso.
+    if (salida.get("notas") or []) and os.environ.get("MARATON_COACH") != "0":
+        try:
+            import coach_ia
+            lec, toc = coach_ia.coach(dict(salida, techo_z2=TECHOS.get(aid)))
+            if lec:
+                salida["lectura"] = lec
+            if toc:
+                salida["toca"] = toc
+            salida["coach"] = "modelo" if lec else "calculo"
+        except Exception as fallo:
+            print("coach ia no corrio:", type(fallo).__name__, flush=True)
     return salida
 
 
