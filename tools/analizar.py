@@ -31,6 +31,15 @@ NOTAS = {"jonah": VAULT / "Maraton - plan 21 semanas.md",
 # jonah: 47 de reposo y 178 de max -> Z2 132-145. yuli: Z2 118-136.
 # Si cambia la FC de reposo hay que recalcular las dos, no ajustar a ojo.
 TECHOS = {"jonah": 145, "yuli": 136}
+# Jonah avisa desde el 22/11 que a 148-150 sigue pudiendo platicar y sentirse relajado: por
+# sensacion ese es su techo real de Z2 y la formula de Karvonen le queda corta. Se acepta el
+# techo declarado en vez de contradecirlo con la cuenta; queda marcado como declarado.
+DECLARADOS = {"jonah": 150}
+
+
+def techo_atleta(aid):
+    """Techo de Z2 del atleta: el que declaro por sensacion manda sobre la formula."""
+    return DECLARADOS.get(aid) or TECHOS.get(aid)
 DURAS = {"calidad", "larga", "carrera"}
 PALABRA_RIESGO = ("irradia", "hacia la pierna", "hormigueo", "adormec", "punzada",
                   "no puedo apoyar", "hinchado", "clavada")
@@ -139,7 +148,7 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
                if LIM.get(r.get("tipo")) and ritmo_min(r) and ritmo_min(r) > LIM[r.get("tipo")]]
     tipos = {r.get("tipo") for r in esta}
     faltan = [t for t in ("calidad", "larga") if t not in tipos]
-    techo = TECHOS.get(aid, 140)
+    techo = techo_atleta(aid) or 140
 
     faciles = [r for r in esta if r.get("tipo") == "facil" and r.get("fc_media")]
 
@@ -246,7 +255,7 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
     if (salida.get("notas") or []) and os.environ.get("MARATON_COACH") != "0":
         try:
             import coach_ia
-            r = list(coach_ia.coach(dict(salida, techo_z2=TECHOS.get(aid))))
+            r = list(coach_ia.coach(dict(salida, techo_z2=techo_atleta(aid))))
             lec, toc, pre = (r + [[], "", []])[:3]
             if lec:
                 salida["lectura"] = lec
@@ -599,7 +608,7 @@ def lectura(r, fcmax=None):
         return "%d:%02d" % (m, s2)
 
     fcmax = fcmax or r.get("fcmax")
-    techo = TECHOS.get(r.get("atleta"))
+    techo = techo_atleta(r.get("atleta"))
     fac = [x for x in ses if x.get("tipo") == "facil"]
     lar = [x for x in ses if x.get("tipo") == "larga"]
     cal = [x for x in ses if x.get("tipo") == "calidad"]
