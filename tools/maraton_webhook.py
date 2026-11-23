@@ -189,13 +189,41 @@ def analizar(atleta: str, datos: dict) -> bool:
     # analizar y, si se corre, borra el feedback bueno con una tarjeta vacia. Se conserva el
     # anterior y se le dice a la app que no hay nada nuevo.
     if not (datos.get("sesiones") or []):
-        print("aviso sin sesiones: se conserva el feedback anterior de", atleta, flush=True)
-        return False
+        # Un telefono que no guarda sesiones propias (el historial vive en la PC) manda avisos
+        # vacios: el corredor pide analisis y le vuelve el de ayer. Se completa con el respaldo
+        # y con el export previo antes de darlo por vacio.
+        falta = {}
+        try:
+            falta = json.loads((CACHE / f"respaldo_{atleta}.json").read_text(encoding="utf-8"))
+        except Exception:
+            falta = {}
+        if not (datos.get("notas") or []):
+            try:
+                previo = json.loads((CACHE / f"export_{atleta}.json").read_text(encoding="utf-8"))
+                falta["notas"] = previo.get("notas") or []
+            except Exception:
+                pass
+        datos = dict(datos, sesiones=falta.get("sesiones") or [],
+                     notas=datos.get("notas") or falta.get("notas") or [])
+        print("aviso sin sesiones: se completa con el respaldo de", atleta,
+              len(datos["sesiones"]), "sesiones", flush=True)
+        if not datos["sesiones"]:
+            print("aviso sin sesiones ni respaldo: se conserva el feedback anterior de", atleta, flush=True)
+            return False
     perfil = datos.get("perfil") or {}
     plan = datos.get("plan") or {}
     semanas = plan.get("semanas") or []
     if not semanas:
-        return False
+        # Igual con el plan: si el aviso no lo trae, se usa el del export anterior.
+        try:
+            previo = json.loads((CACHE / f"export_{atleta}.json").read_text(encoding="utf-8"))
+            semanas = previo.get("semanas") or []
+            plan = {"inicio": plan.get("inicio") or previo.get("inicio"), "semanas": semanas}
+            perfil = perfil or (previo.get("atleta") or {})
+        except Exception:
+            semanas = []
+        if not semanas:
+            return False
     export = {"api": "plan-maraton/v1", "exportado": time.strftime("%Y-%m-%dT%H:%M:%S"),
               "atleta": {"id": atleta, "nombre": perfil.get("nombre") or atleta,
                          "fcmax": perfil.get("fcmax"), "fc_reposo": perfil.get("fc_reposo"),

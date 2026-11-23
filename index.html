@@ -503,7 +503,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v71';
+  var APP_V = 'v72';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
@@ -1974,6 +1974,22 @@
       location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
     window.addEventListener('load', function () {
       navigator.serviceWorker.register('sw.js').catch(function () { /* sin SW la app sigue funcionando */ });
+      // Si el telefono se queda con una version vieja en cache, el atleta pide analisis y le
+      // vuelve el de siempre, sin preguntas. Se compara contra sw.js y se refresca una sola vez.
+      (function () {
+        try {
+          if (sessionStorage.getItem('yaRefresque') === APP_V) return;
+        } catch (e) {}
+        fetch('sw.js?x=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.text(); })
+          .then(function (t) {
+            var m = /maraton-(v\d+)/.exec(t);
+            if (!m || m[1] === APP_V) return;
+            try { sessionStorage.setItem('yaRefresque', m[1]); } catch (e) {}
+            if (window.caches) caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); })
+              .then(function () { location.reload(); }, function () { location.reload(); });
+            else location.reload();
+          }).catch(function () {});
+      })();
     });
   }
 })();
