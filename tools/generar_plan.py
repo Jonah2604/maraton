@@ -21,8 +21,8 @@ SW = APP / "sw.js"
 VAULT = Path(r"C:\Users\chris\Documents\Obsidian\Jonah\02 - Proyectos")
 
 NOTAS = {
-    "jonah": VAULT / "Maraton - plan 21 semanas.md",
-    "yuli": VAULT / "Maraton - plan de Yuli.md",
+    "jonah": VAULT / "Maraton" / "Maraton - plan 21 semanas.md",
+    "yuli": VAULT / "Maraton" / "Maraton - plan de Yuli.md",
 }
 
 FILA = re.compile(r"^\|\s*(\d{1,2})\s*\|")
