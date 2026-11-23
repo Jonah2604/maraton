@@ -234,6 +234,13 @@ def analizar(atleta: str, datos: dict) -> bool:
               # lo que el corredor escribio en la app; sin esto el analisis contesta a ciegas
               "notas": datos.get("notas") or []}
     fuente = CACHE / f"export_{atleta}.json"
+    if not export["notas"]:
+        # Un aviso sin notas no borra las que ya estaban: son el unico lugar donde viven
+        # las respuestas del corredor y perderlas deja al coach hablando a ciegas.
+        try:
+            export["notas"] = json.loads(fuente.read_text(encoding="utf-8")).get("notas") or []
+        except Exception:
+            pass
     fuente.write_text(json.dumps(export, ensure_ascii=False), encoding="utf-8")
     try:
         r = subprocess.run([PY, str(APP / "tools" / "analizar.py"), str(fuente),
