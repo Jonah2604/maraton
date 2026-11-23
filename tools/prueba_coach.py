@@ -74,6 +74,19 @@ def principal():
     revisar("las sesiones siguen ahi", len(export.get("registro") or []) == len(respaldo["sesiones"]),
             "%d de %d" % (len(export.get("registro") or []), len(respaldo["sesiones"])))
 
+    print("2b) con los mismos datos, las preguntas ya contestadas se caen aunque no se reanalice")
+    fb = json.loads((tmp / "feedback_yuli.json").read_text(encoding="utf-8"))
+    fb["preguntas"] = ["¿Cuántas horas dormiste antes de la larga?",
+                       "¿Qué comiste durante la larga y en qué km?"]
+    (tmp / "feedback_yuli.json").write_text(json.dumps(fb, ensure_ascii=False), encoding="utf-8")
+    aviso_vacio(tmp)
+    fb = json.loads((tmp / "feedback_yuli.json").read_text(encoding="utf-8"))
+    revisar("no repite el sueno ya contado", not any("dorm" in p.lower() for p in fb["preguntas"]),
+            str(fb["preguntas"]))
+    revisar("ni la comida ya contada", not any("comi" in p.lower() for p in fb["preguntas"]),
+            str(fb["preguntas"]))
+    revisar("pregunta otra cosa", bool(fb["preguntas"]), str(fb["preguntas"]))
+
     print("3) mismos datos dos veces no pagan el modelo otra vez")
     import contextlib
     import io
@@ -141,9 +154,29 @@ def principal():
             coach_ia.motivo() == "la respuesta no se pudo sostener con los datos", coach_ia.motivo())
 
 
+def sexto():
+    print("6) no pregunta lo que el corredor ya contesto")
+    notas = [{"fecha": "2026-11-21", "texto": "No dormí bien, desperté muy temprano y la FC subía rápido"},
+             {"fecha": "2026-11-22", "texto": "Dormí entre 5 o 6 horas. Mi FC máximo que uso es 150"}]
+    datos = {"notas": notas, "hecho": []}
+    crudas = ["¿Cuántas horas dormiste la noche del 20 al 21?",
+              "¿Dormiste bien esa noche?",
+              "¿Qué comiste antes de la larga?",
+              "¿Con qué reloj mides el pulso?"]
+    quedan = coach_ia.preguntas_validas(crudas, datos)
+    revisar("no pregunta del sueño si ya lo conto", not any("dorm" in p.lower() for p in quedan), str(quedan))
+    revisar("no pregunta del pulso si ya lo dijo", not any("reloj" in p.lower() for p in quedan), str(quedan))
+    revisar("si pregunta lo que falta", any("comi" in p.lower() for p in quedan), str(quedan))
+    revisar("no repite el mismo tema dos veces", len(quedan) == len(set(quedan)))
+    # dos preguntas del mismo tema, sin notas: sobrevive una
+    dos = coach_ia.preguntas_validas(["¿Dormiste bien?", "¿Cuántas horas dormiste?"], {"notas": []})
+    revisar("dos del mismo tema dejan una", len(dos) == 1, str(dos))
+
+
 if __name__ == "__main__":
     try:
         principal()
+        sexto()
     except Exception as fallo:
         import traceback
         traceback.print_exc()

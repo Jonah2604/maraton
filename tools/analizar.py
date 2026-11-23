@@ -102,7 +102,13 @@ def preguntas(salida):
         pre.append("¿Cómo dormiste la noche antes de la %s y cómo amaneciste ese día?" % cuando)
     elif km >= 7:
         pre.append("¿Qué comiste o tomaste durante la %s y en qué kilómetro lo hiciste?" % cuando)
-    return pre[:2]
+    # Huecos que siempre quedan y nunca duelen: como termino y que terreno piso. Si todo lo
+    # demas ya lo conto, la tarjeta sigue preguntando algo que si sirve.
+    pre.append("¿Cómo terminaste la %s: alguna molestia o todo limpio?" % cuando)
+    pre.append("¿Qué terreno pisaste en la %s: banqueta, tierra, cuestas?" % cuando)
+    # Se devuelven todos los huecos: el filtro de coach_ia tira los ya contestados y
+    # despues corta a dos. Cortar aqui antes de filtrar dejaba la tarjeta muda.
+    return pre
 
 
 def analiza(aid, plan, registro, hoy, forzar_semana=None):
@@ -248,6 +254,7 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
     # Lo que el coach necesita saber y la app no puede medir. Se pregunta dentro de la tarjeta
     # y el corredor contesta en «Para tu coach»: la conversación no sale de la app.
     salida["preguntas"] = preguntas(salida)
+    # Tambien el calculo: si la nota ya dice como durmio o que comio, no se vuelve a preguntar.
     salida["lectura"] = lectura(salida, fcmax)
     salida["toca"] = toca(salida, fcmax)
     # Con nota escrita, la lectura de plantilla no basta: se le pide al coach que razone.
@@ -263,6 +270,13 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
                 salida["toca"] = toc
             if pre:
                 salida["preguntas"] = pre
+            # El modelo a veces pregunta lo que el corredor acaba de contestar. Antes de
+            # ensenarlo, se tira lo que el ya conto (dormir, comida, molestia) y lo repetido.
+            try:
+                import coach_ia as _c
+                salida["preguntas"] = _c.preguntas_validas(salida["preguntas"], salida)
+            except Exception:
+                pass
             salida["coach"] = "modelo" if (lec or toc) else "calculo"
             # El corredor tiene derecho a saber por que la tarjeta habla con numeros y no con
             # el coach: sin llave, sin cuota o porque la nube tardo. No es un detalle interno.
@@ -271,6 +285,14 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
         except Exception as fallo:
             salida["ia_motivo"] = "el coach no pudo correr"
             print("coach ia no corrio:", type(fallo).__name__, flush=True)
+    try:
+        import coach_ia as _c
+        salida["preguntas"] = _c.preguntas_validas(salida.get("preguntas") or [], salida)
+        if not salida["preguntas"]:
+            # Ninguna sobrevivio: se pregunta por el hueco real, no se deja la tarjeta sin voz.
+            salida["preguntas"] = _c.preguntas_validas(preguntas(salida), salida)
+    except Exception:
+        pass
     return salida
 
 

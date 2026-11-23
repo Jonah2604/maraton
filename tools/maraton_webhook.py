@@ -29,7 +29,7 @@ CACHE = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "hermes" / "cac
 LOG = CACHE / "avisos.jsonl"
 APP = Path(__file__).resolve().parent.parent          # carpeta de la app (donde vive tools/analizar.py)
 # Se sube cuando cambia el motor de analisis: fuerza a recalcular aunque los datos no cambien.
-SELLO = "v72b"
+SELLO = "v73b"
 
 
 def huella(datos):
@@ -259,6 +259,23 @@ def analizar(atleta: str, datos: dict) -> bool:
         previo_fb = {}
     marca = huella({"sesiones": export["registro"], "notas": export["notas"]})
     if previo_fb.get("ok") and previo_fb.get("huella") == marca:
+        # Aunque no se vuelva a pagar el modelo, las preguntas que el corredor ya contesto
+        # no se le pueden volver a mostrar: se filtran con sus notas y, si no queda nada
+        # que preguntar, se pide el hueco que de verdad falta (esto no cuesta nada).
+        try:
+            import coach_ia
+            quedan = coach_ia.preguntas_validas(previo_fb.get("preguntas") or [], export)
+            if not quedan:
+                import analizar as _a
+                quedan = coach_ia.preguntas_validas(
+                    _a.preguntas({"hecho": export.get("registro") or [], "notas": export.get("notas") or []}),
+                    export)
+            previo_fb["preguntas"] = quedan
+            if previo_fb.get("cierre"):
+                previo_fb["cierre"]["preguntas"] = coach_ia.preguntas_validas(
+                    previo_fb["cierre"].get("preguntas") or [], export)
+        except Exception as fallo:
+            print("no pude filtrar las preguntas:", type(fallo).__name__, flush=True)
         previo_fb["cuando"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         previo_fb["t"] = int(time.time() * 1000)
         previo_fb["sin_cambios"] = True
@@ -292,6 +309,7 @@ def analizar(atleta: str, datos: dict) -> bool:
         import coach_ia
         r = list(coach_ia.cierra_semana(export, date.today()))
         lec, toc, pre = (r + [[], "", []])[:3]
+        pre = coach_ia.preguntas_validas(pre, export, ya=dato.get("preguntas") or [])
         if lec or toc:
             semana = {"lectura": lec, "toca": toc, "cuando": time.strftime("%Y-%m-%dT%H:%M:%S"),
                       "semana": coach_ia._semana(export)["semana"], "preguntas": pre}

@@ -200,6 +200,40 @@ def pide(prompt):
         return None
 
 
+# Temas que el corredor ya conto en sus notas. Si su nota habla de sueño, preguntarle cuantas
+# horas durmio es no haberlo leido: la pregunta se tira y se busca otra cosa que si falte.
+TEMAS = {
+    "sueno": ("dorm", "sueñ", "descans", "despert"),
+    "comida": ("comi", "comid", "desayun", "cena", "hidrat", "gel", "agua", "sal", "tomé", "tome"),
+    "molestia": ("molest", "dolor", "lesion", "aquiles", "rodilla", "fascia", "tibial"),
+    "pulso": ("reloj", "banda", "fc m", "fcmax", "frecuencia cardiaca", "techo de z2", "pulso maxim"),
+    "terreno": ("terreno", "cuesta", "superficie", "desnivel", "altitud"),
+}
+
+
+def _tema(texto):
+    t = texto.lower()
+    for nombre, palabras in TEMAS.items():
+        if any(w in t for w in palabras):
+            return nombre
+    return ""
+
+
+def preguntas_validas(pre, datos, ya=()):
+    """Quita preguntas que el corredor ya contesto y las que repiten el tema de otra."""
+    notas = " ".join(str(n.get("texto") or "") for n in (datos.get("notas") or [])
+                     if isinstance(n, dict)).lower()
+    vistos = {_tema(str(x)) for x in ya if _tema(str(x))}
+    quedan = []
+    for p in pre or []:
+        t = _tema(str(p))
+        if t and (t in vistos or any(w in notas for w in TEMAS[t])):
+            continue                      # ya lo conto o ya se pregunto: no se repite
+        vistos.add(t)
+        quedan.append(p)
+    return quedan[:2]
+
+
 def coach(datos, ahora=None):
     """Devuelve (lectura, toca, preguntas). Vacío si no hay nota o no hay con qué contestar."""
     if not (datos.get("notas") or []):
