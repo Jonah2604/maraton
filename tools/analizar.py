@@ -72,6 +72,30 @@ def carga_export(ruta):
     raise SystemExit("no reconozco el JSON: falta 'atletas' o 'atleta'")
 
 
+def preguntas(salida):
+    """Lo que falta preguntar, en una línea, para contestar en Notas. Sin datos, no se pregunta."""
+    hecho = salida.get("hecho") or []
+    if not hecho:
+        return []
+    ult = hecho[-1]
+    cuando = str(ult.get("tipo") or "sesión").strip()
+    km = ult.get("km")
+    try:
+        km = float(km) if km not in (None, "") else 0
+    except (TypeError, ValueError):
+        km = 0
+    pre = []
+    tiene_pulso = bool(ult.get("fc_media") or ult.get("fc_max") or ult.get("fc"))
+    if not tiene_pulso:
+        pre.append("¿El reloj te dio pulso en la %s? Si no, ¿qué tan duro se sintió del 1 al 10?" % cuando)
+    tiene_nota = bool(salida.get("notas"))
+    if not tiene_nota:
+        pre.append("¿Cómo dormiste la noche antes de la %s y cómo amaneciste ese día?" % cuando)
+    elif km >= 7:
+        pre.append("¿Qué comiste o tomaste durante la %s y en qué kilómetro lo hiciste?" % cuando)
+    return pre[:2]
+
+
 def analiza(aid, plan, registro, hoy, forzar_semana=None):
     semanas = {s["n"]: s for s in plan.get("semanas", [])}
     # FC maxima: la del perfil del atleta. Sin ella las frases de pulso se callan en vez de suponer.
@@ -212,6 +236,9 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
             "siguiente": sig.get("n") if sig else None,
             "notas": plan["notas"] if isinstance(plan.get("notas"), list) else []}
     salida["coach"] = "calculo"        # sin nota, la tarjeta habla el cálculo
+    # Lo que el coach necesita saber y la app no puede medir. Se pregunta dentro de la tarjeta
+    # y el corredor contesta en «Para tu coach»: la conversación no sale de la app.
+    salida["preguntas"] = preguntas(salida)
     salida["lectura"] = lectura(salida, fcmax)
     salida["toca"] = toca(salida, fcmax)
     # Con nota escrita, la lectura de plantilla no basta: se le pide al coach que razone.
@@ -219,11 +246,14 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
     if (salida.get("notas") or []) and os.environ.get("MARATON_COACH") != "0":
         try:
             import coach_ia
-            lec, toc = coach_ia.coach(dict(salida, techo_z2=TECHOS.get(aid)))
+            r = list(coach_ia.coach(dict(salida, techo_z2=TECHOS.get(aid))))
+            lec, toc, pre = (r + [[], "", []])[:3]
             if lec:
                 salida["lectura"] = lec
             if toc:
                 salida["toca"] = toc
+            if pre:
+                salida["preguntas"] = pre
             salida["coach"] = "modelo" if (lec or toc) else "calculo"
         except Exception as fallo:
             print("coach ia no corrio:", type(fallo).__name__, flush=True)

@@ -213,7 +213,7 @@
       <h2>Para tu coach</h2>
       <p class="peq" style="margin:6px 0">Escribe lo que la app no sabe: «el jueves juego fútbol»,
         «va a llover toda la semana», «quiero entrenar un día más». Queda guardado y el plan lo toma en cuenta.</p>
-      <textarea id="ntTexto" rows="3" maxlength="500" placeholder="El jueves juego fútbol con los del trabajo y el sábado no voy a poder salir"></textarea>
+      <textarea id="ntTexto" rows="3" maxlength="500" placeholder="Contesta lo que te preguntó el coach o cuenta lo que la app no sabe: el jueves juego fútbol, dormí mal, me dolió la rodilla"></textarea>
       <div class="fila" style="margin-top:8px">
         <select id="ntTipo">
           <option value="evento">Algo que va a pasar</option>
@@ -502,7 +502,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v67';
+  var APP_V = 'v68';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
@@ -902,6 +902,15 @@
     (j.banderas || []).forEach(function (b) { out.push('<div class="peq">• ' + esc(b) + '</div>'); });
     var toca = j.toca || tocaDeTexto(j.texto);
     if (toca) out.push('<div class="peq" style="margin-top:6px"><b>Lo que toca:</b> ' + esc(toca) + '</div>');
+    // Lo que el coach necesita saber se pregunta aquí y se contesta en «Para tu coach»:
+    // la conversación se queda en la app, no se va al chat.
+    var pregs = (j.preguntas || []).slice();
+    ((j.cierre || {}).preguntas || []).forEach(function (x) { if (pregs.indexOf(x) < 0) pregs.push(x); });
+    if (pregs.length) {
+      out.push('<div class="peq" style="margin-top:8px"><b>Contéstame en «Para tu coach»:</b></div>');
+      pregs.slice(0, 2).forEach(function (x) { out.push('<div class="peq">• ' + esc(x) + '</div>'); });
+      out.push('<button class="bt mini" id="bIrNotas" style="margin-top:4px">Escribir la respuesta</button>');
+    }
     if (j.siguiente && j.cambios && j.cambios.km) out.push('<div class="peq">Semana ' + esc(String(j.siguiente)) +
       ' ajustada: ' + esc(String(j.cambios.km)) + ' km, larga ' + esc(String(j.cambios.larga)) + '</div>');
     // Cierre de semana: lo que el coach decidió mirando la semana entera. Va aparte del
@@ -915,6 +924,13 @@
     }
     if (!lec.length && !toca) out.push('<div class="peq">El análisis llegó sin lectura: registra la sesión completa (km, minutos y pulso) y pide el análisis otra vez.</div>');
     caja.innerHTML = out.join('');
+    var ir = $('#bIrNotas');
+    if (ir) ir.onclick = function () {
+      var t = $('#ntTexto');
+      if (!t) return;
+      t.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      t.focus();
+    };
   }
 
   // Respaldo para un análisis guardado antes de que existiera el campo «lectura»:

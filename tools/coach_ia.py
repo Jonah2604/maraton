@@ -77,6 +77,12 @@ La ÚLTIMA línea es la orden: un verbo en imperativo con lo que tiene que hacer
 («Baja la próxima larga a 9:30/km y duerme dos noches seguidas antes de la calidad»).
 Sin la orden la frase no sirve. Exactamente %d frases, y la de la orden es la %dª.
 
+Después de esas frases, si te falta un dato para la próxima vez, escribe una o dos líneas
+empezando con "PREGUNTA:" — una sola pregunta cada una, concreta y de una línea, que el
+corredor pueda contestar en la app (sueño, molestia, terreno, si comió antes, cómo se sintió).
+No preguntes lo que ya está en sus notas ni lo que el reloj ya midió. Si no te falta nada,
+no escribas ninguna.
+
 Datos:
 """ % (TOPE, TOPE, TOPE)
 
@@ -174,21 +180,27 @@ def pide(prompt):
 
 
 def coach(datos, ahora=None):
-    """Devuelve (lectura, toca). Vacío si no hay nota o no hay con qué contestar."""
+    """Devuelve (lectura, toca, preguntas). Vacío si no hay nota o no hay con qué contestar."""
     if not (datos.get("notas") or []):
-        return [], ""
+        return [], "", []
     if not isinstance(datos, dict):
-        return [], ""
+        return [], "", []
     datos = _recorte(datos)
     if not datos["notas"]:
-        return [], ""
+        return [], "", []
     txt = pide(REGLAS + json.dumps(datos, ensure_ascii=False, default=str))
     if not txt:
-        return [], ""
+        return [], "", []
     lineas = [l for l in txt.splitlines() if l.strip()]
+    # Las preguntas viajan aparte: se contestan en «Para tu coach» y vuelven en el próximo
+    # aviso, asi que la conversacion se queda dentro de la app.
+    pre = [re.sub(r"^\W*pregunta\s*:\s*", "", l, flags=re.I).strip()
+           for l in lineas if re.match(r"^\W*pregunta\s*:", l, flags=re.I)]
+    pre = [x for x in pre if x][:2]
+    lineas = [l for l in lineas if not re.match(r"^\W*pregunta\s*:", l, flags=re.I)]
     frases = permitido(lineas, datos)
     if not frases:
-        return [], ""
+        return [], "", pre
     # La acción es la frase que manda hacer algo; las demás son lectura. El verbo va conjugado
     # o en imperativo: «dormiste mal» no es una orden.
     ACCION = re.compile(r"(duerme|duermas|duerman|corre|corras|corran|cambia|cambies|baja|bajes|"
@@ -202,7 +214,7 @@ def coach(datos, ahora=None):
         if ACCION.search(lectura[k]):
             toca = lectura.pop(k)
             break
-    return lectura[:TOPE - 1] if toca else lectura[:TOPE], toca
+    return (lectura[:TOPE - 1] if toca else lectura[:TOPE]), toca, pre
 
 
 REGLAS_SEMANA = """
@@ -223,6 +235,10 @@ PULSO: qué dice el pulso de la semana (si la calidad o la larga se le fueron de
 AJUSTE: qué se cambia la semana que viene y por qué. Puede ser «nada» si la semana salió
   bien: es una respuesta válida y muchas veces la correcta.
 ORDEN: una frase en imperativo con lo que tiene que hacer en las próximas sesiones.
+
+Si te falta un dato para cerrar bien la semana, agrega UNA línea empezando con "PREGUNTA:"
+(una sola pregunta de una línea, que el corredor conteste en la app). Si no falta nada, no
+la escribas.
 
 Reglas que no puedes romper: no subir el volumen más del 20 % de una semana a otra; si la
 semana pasó del 90 % del pulso máximo, la siguiente no sube; con molestia, se iguala o se
@@ -274,19 +290,25 @@ def _semana(datos, hoy=None):
 
 
 def cierra_semana(datos, hoy=None):
-    """Cierre de semana: (lectura, toca). Vacío si no hay con qué contestar."""
+    """Cierre de semana: (lectura, toca, preguntas). Vacío si no hay con qué contestar."""
     if not isinstance(datos, dict) or not datos.get("registro"):
-        return [], ""
+        return [], "", []
     rec = _semana(datos, hoy)
     if not rec["hecho"]:
-        return [], ""
+        return [], "", []
     txt = pide(REGLAS_SEMANA + json.dumps(rec, ensure_ascii=False, default=str))
     if not txt:
-        return [], ""
-    dichos, orden = [], ""
+        return [], "", []
+    dichos, orden, pre = [], "", []
     for linea in txt.splitlines():
         linea = linea.strip()
         if not linea:
+            continue
+        # La pregunta que el coach deja para el corredor: se contesta en Notas, no en el chat.
+        mp = re.match(r"^\W*PREGUNTA\s*:\s*(.+)$", linea, re.I)
+        if mp:
+            if len(pre) < 2:
+                pre.append(mp.group(1).strip())
             continue
         m = re.match(r"(SEMANA|PULSO|AJUSTE|ORDEN)\s*:\s*(.+)", linea, re.I)
         etiqueta, cuerpo = (m.group(1).upper(), m.group(2)) if m else ("", linea)
@@ -300,7 +322,7 @@ def cierra_semana(datos, hoy=None):
     # Si el filtro se llevó el diagnóstico, la orden igual sirve: vale más que un cierre vacío.
     if not dichos and orden:
         dichos = ["La semana se revisó con lo que hay; el detalle numérico no se pudo sostener."]
-    return dichos[:3], orden
+    return dichos[:3], orden, pre
 
 
 if __name__ == "__main__":

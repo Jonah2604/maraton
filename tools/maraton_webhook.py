@@ -230,10 +230,11 @@ def analizar(atleta: str, datos: dict) -> bool:
     semana = {}
     try:
         import coach_ia
-        lec, toc = coach_ia.cierra_semana(export, date.today())
+        r = list(coach_ia.cierra_semana(export, date.today()))
+        lec, toc, pre = (r + [[], "", []])[:3]
         if lec or toc:
             semana = {"lectura": lec, "toca": toc, "cuando": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                      "semana": coach_ia._semana(export)["semana"]}
+                      "semana": coach_ia._semana(export)["semana"], "preguntas": pre}
     except Exception as fallo:
         print("cierre de semana no corrio:", type(fallo).__name__, flush=True)
     salida = {"ok": True, "cuando": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -245,7 +246,8 @@ def analizar(atleta: str, datos: dict) -> bool:
               "decision": dato.get("decision"), "siguiente": dato.get("siguiente"),
               "cambios": dato.get("cambios"),
               "lectura": dato.get("lectura") or [], "toca": dato.get("toca") or "",
-              "texto": dato.get("texto"), "coach": dato.get("coach"), "cierre": semana}
+              "texto": dato.get("texto"), "coach": dato.get("coach"), "cierre": semana,
+              "preguntas": dato.get("preguntas") or []}
     (CACHE / f"feedback_{atleta}.json").write_text(json.dumps(salida, ensure_ascii=False, indent=1),
                                                    encoding="utf-8")
     print("feedback listo:", atleta, "semana", salida.get("semana"), flush=True)
