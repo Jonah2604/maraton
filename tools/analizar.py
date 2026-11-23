@@ -264,7 +264,12 @@ def analiza(aid, plan, registro, hoy, forzar_semana=None):
             if pre:
                 salida["preguntas"] = pre
             salida["coach"] = "modelo" if (lec or toc) else "calculo"
+            # El corredor tiene derecho a saber por que la tarjeta habla con numeros y no con
+            # el coach: sin llave, sin cuota o porque la nube tardo. No es un detalle interno.
+            if salida["coach"] == "calculo":
+                salida["ia_motivo"] = coach_ia.motivo() or "la nube no dio lectura"
         except Exception as fallo:
+            salida["ia_motivo"] = "el coach no pudo correr"
             print("coach ia no corrio:", type(fallo).__name__, flush=True)
     return salida
 

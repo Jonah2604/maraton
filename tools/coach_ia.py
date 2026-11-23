@@ -160,9 +160,20 @@ def _recorte(datos, hoy=None):
             "siguiente": datos.get("siguiente")}
 
 
+# Por que no hubo modelo: la tarjeta lo dice y el corredor sabe que le falta configurar
+# algo o que la cuota se acabo, en vez de creer que el coach «no tiene nada que decir».
+MOTIVO = {"valor": ""}
+
+
+def motivo():
+    return MOTIVO["valor"]
+
+
 def pide(prompt):
+    MOTIVO["valor"] = ""
     k = llave()
     if not k:
+        MOTIVO["valor"] = "sin llave de modelo"
         return None
     cuerpo = {"model": MODELO, "temperature": 0.4, "max_tokens": 400,
               "messages": [{"role": "user", "content": prompt}]}
@@ -173,8 +184,18 @@ def pide(prompt):
         with urllib.request.urlopen(req, timeout=ESPERA) as r:
             j = json.loads(r.read().decode("utf-8"))
         return (j["choices"][0]["message"]["content"] or "").strip() or None
-    except (urllib.error.HTTPError, urllib.error.URLError, KeyError, ValueError, TimeoutError,
-            OSError) as fallo:
+    except urllib.error.HTTPError as fallo:
+        MOTIVO["valor"] = ({401: "la llave no sirve", 402: "sin cuota",
+                            429: "cuota agotada o demasiadas peticiones"}.get(fallo.code)
+                           or "la nube contesto %s" % fallo.code)
+        print("coach sin modelo: HTTP", fallo.code, flush=True)
+        return None
+    except (urllib.error.URLError, TimeoutError, OSError) as fallo:
+        MOTIVO["valor"] = "no hubo respuesta a tiempo"
+        print("coach sin modelo:", type(fallo).__name__, flush=True)
+        return None
+    except (KeyError, ValueError) as fallo:
+        MOTIVO["valor"] = "la nube devolvio algo raro"
         print("coach sin modelo:", type(fallo).__name__, flush=True)
         return None
 
@@ -200,6 +221,7 @@ def coach(datos, ahora=None):
     lineas = [l for l in lineas if not re.match(r"^\W*pregunta\s*:", l, flags=re.I)]
     frases = permitido(lineas, datos)
     if not frases:
+        MOTIVO["valor"] = "la respuesta no se pudo sostener con los datos"
         return [], "", pre
     # La acción es la frase que manda hacer algo; las demás son lectura. El verbo va conjugado
     # o en imperativo: «dormiste mal» no es una orden.

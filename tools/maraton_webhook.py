@@ -28,6 +28,15 @@ DESTINO = os.environ.get("MARATON_DESTINO", "telegram")
 CACHE = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "hermes" / "cache" / "maraton"
 LOG = CACHE / "avisos.jsonl"
 APP = Path(__file__).resolve().parent.parent          # carpeta de la app (donde vive tools/analizar.py)
+# Se sube cuando cambia el motor de analisis: fuerza a recalcular aunque los datos no cambien.
+SELLO = "v72b"
+
+
+def huella(datos):
+    """Identifica los datos con los que se hizo el analisis: sesiones, notas y el motor."""
+    import hashlib
+    base = {"s": datos.get("sesiones") or [], "n": datos.get("notas") or [], "m": SELLO}
+    return hashlib.sha1(json.dumps(base, sort_keys=True, default=str).encode("utf-8")).hexdigest()
 PY = os.environ.get("MARATON_PYTHON") or sys.executable
 
 
@@ -223,6 +232,7 @@ def analizar(atleta: str, datos: dict) -> bool:
         except Exception:
             semanas = []
         if not semanas:
+            print("aviso sin plan ni export previo:", atleta, flush=True)
             return False
     export = {"api": "plan-maraton/v1", "exportado": time.strftime("%Y-%m-%dT%H:%M:%S"),
               "atleta": {"id": atleta, "nombre": perfil.get("nombre") or atleta,
@@ -241,6 +251,21 @@ def analizar(atleta: str, datos: dict) -> bool:
             export["notas"] = json.loads(fuente.read_text(encoding="utf-8")).get("notas") or []
         except Exception:
             pass
+    # Si nada cambio desde el ultimo analisis, no se vuelve a pagar el modelo: la tarjeta
+    # avisa que no hay datos nuevos en vez de repetir lo mismo como si fuera de hoy.
+    try:
+        previo_fb = json.loads((CACHE / f"feedback_{atleta}.json").read_text(encoding="utf-8"))
+    except Exception:
+        previo_fb = {}
+    marca = huella({"sesiones": export["registro"], "notas": export["notas"]})
+    if previo_fb.get("ok") and previo_fb.get("huella") == marca:
+        previo_fb["cuando"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        previo_fb["t"] = int(time.time() * 1000)
+        previo_fb["sin_cambios"] = True
+        (CACHE / f"feedback_{atleta}.json").write_text(
+            json.dumps(previo_fb, ensure_ascii=False, indent=1), encoding="utf-8")
+        print("sin datos nuevos:", atleta, flush=True)
+        return True
     fuente.write_text(json.dumps(export, ensure_ascii=False), encoding="utf-8")
     try:
         r = subprocess.run([PY, str(APP / "tools" / "analizar.py"), str(fuente),
@@ -284,7 +309,10 @@ def analizar(atleta: str, datos: dict) -> bool:
               "texto": dato.get("texto"), "coach": dato.get("coach"), "cierre": semana,
               "preguntas": dato.get("preguntas") or [],
               # cuantas notas del corredor entraron al analisis: la tarjeta lo muestra
-              "notas": dato.get("notas") or []}
+              "notas": dato.get("notas") or [],
+              "huella": marca, "sin_cambios": False,
+              # por que la tarjeta habla con numeros y no con el coach (sin llave, sin cuota…)
+              "ia_motivo": dato.get("ia_motivo") or ""}
     (CACHE / f"feedback_{atleta}.json").write_text(json.dumps(salida, ensure_ascii=False, indent=1),
                                                    encoding="utf-8")
     print("feedback listo:", atleta, "semana", salida.get("semana"), flush=True)

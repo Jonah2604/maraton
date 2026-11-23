@@ -503,7 +503,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v72';
+  var APP_V = 'v73';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
@@ -890,10 +890,15 @@
       caja.innerHTML = '';
       return;
     }
-    cuando.textContent = 'Actualizado ' + (j.cuando || '').replace('T', ' ').slice(0, 16) +
-                         (j.semana ? ' · semana ' + j.semana : '') +
-                         (j.notas && j.notas.length ? ' · leyó ' + j.notas.length +
-                           (j.notas.length === 1 ? ' nota tuya' : ' notas tuyas') : '');
+    var linea = 'Actualizado ' + (j.cuando || '').replace('T', ' ').slice(0, 16) +
+                (j.semana ? ' · semana ' + j.semana : '') +
+                (j.notas && j.notas.length ? ' · leyó ' + j.notas.length +
+                  (j.notas.length === 1 ? ' nota tuya' : ' notas tuyas') : '');
+    // Dos cosas que el corredor tiene que saber y antes se callaban: que el analisis no cambio
+    // porque no hay datos nuevos, y que la lectura salio de los numeros porque la nube fallo.
+    if (j.sin_cambios) linea += ' · sin datos nuevos';
+    if (j.coach === 'calculo' && j.ia_motivo) linea += ' · sin coach de IA: ' + j.ia_motivo;
+    cuando.textContent = linea;
     // Lo que el corredor ya ve en «Cómo va la semana» (km del plan, km hechos, semana siguiente)
     // NO se repite aquí: esta tarjeta es la lectura del coach. Si no hay lectura, no se inventa.
     var out = [];
