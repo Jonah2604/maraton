@@ -502,7 +502,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v68';
+  var APP_V = 'v69';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
@@ -907,9 +907,14 @@
     var pregs = (j.preguntas || []).slice();
     ((j.cierre || {}).preguntas || []).forEach(function (x) { if (pregs.indexOf(x) < 0) pregs.push(x); });
     if (pregs.length) {
-      out.push('<div class="peq" style="margin-top:8px"><b>Contéstame en «Para tu coach»:</b></div>');
+      out.push('<div class="peq" style="margin-top:8px"><b>Contéstame aquí:</b></div>');
       pregs.slice(0, 2).forEach(function (x) { out.push('<div class="peq">• ' + esc(x) + '</div>'); });
-      out.push('<button class="bt mini" id="bIrNotas" style="margin-top:4px">Escribir la respuesta</button>');
+      // La respuesta se escribe en la misma tarjeta: no hay que bajar a otra parte de la app.
+      out.push('<textarea id="prTexto" rows="2" maxlength="500" placeholder="Respuesta para el coach"' +
+               ' style="width:100%;margin-top:6px;resize:vertical;background:var(--panel2);border:1px solid var(--linea);' +
+               'border-radius:12px;color:var(--texto);padding:10px 12px;font:inherit;font-size:14px"></textarea>');
+      out.push('<button class="bt pri" id="prEnviar" style="margin-top:6px">Enviar respuesta</button>');
+      out.push('<p class="peq" id="prAviso"></p>');
     }
     if (j.siguiente && j.cambios && j.cambios.km) out.push('<div class="peq">Semana ' + esc(String(j.siguiente)) +
       ' ajustada: ' + esc(String(j.cambios.km)) + ' km, larga ' + esc(String(j.cambios.larga)) + '</div>');
@@ -924,12 +929,19 @@
     }
     if (!lec.length && !toca) out.push('<div class="peq">El análisis llegó sin lectura: registra la sesión completa (km, minutos y pulso) y pide el análisis otra vez.</div>');
     caja.innerHTML = out.join('');
-    var ir = $('#bIrNotas');
-    if (ir) ir.onclick = function () {
-      var t = $('#ntTexto');
-      if (!t) return;
-      t.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      t.focus();
+    // Responder al coach sin salir del análisis: la respuesta entra como nota del día y
+    // dispara el análisis otra vez, así que el coach la lee de inmediato.
+    var env = $('#prEnviar');
+    if (env) env.onclick = function () {
+      var t = $('#prTexto'), av = $('#prAviso');
+      var texto = t ? t.value.trim() : '';
+      if (!texto) { if (av) av.textContent = 'Escribe tu respuesta primero.'; return; }
+      var r = A.nota(atleta, texto, 'otro');
+      if (!r.ok) { if (av) av.textContent = r.error; return; }
+      t.value = '';
+      if (av) av.textContent = 'Enviada. El coach la está leyendo.';
+      pintarNotas();
+      setTimeout(function () { if (typeof pedirFeedback === 'function') pedirFeedback(); }, 400);
     };
   }
 
