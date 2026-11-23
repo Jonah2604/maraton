@@ -209,6 +209,13 @@
       <p class="peq">Toca una sesión para ver cómo se hace, en qué pulso y cuándo se corta.</p>
     </div>
 
+    <div class="card" id="cFb">
+      <div class="fila"><h2 style="margin:0">Lo que dice el coach</h2>
+        <button class="bt mini" id="bFb">↻ Pedir análisis</button></div>
+      <div class="peq" id="fbCuado" style="margin-top:6px"></div>
+      <div id="fbTexto" style="margin-top:8px"></div>
+    </div>
+
     <div class="card">
       <h2>Para tu coach</h2>
       <p class="peq" style="margin:6px 0">Escribe lo que la app no sabe: «el jueves juego fútbol»,
@@ -268,12 +275,6 @@
       <div class="chips" id="fChips" style="margin-top:8px"></div>
       <div class="peq" id="fTxt" style="margin-top:8px"></div>
       <div id="fAvisos"></div>
-    </div>
-    <div class="card" id="cFb">
-      <div class="fila"><h2 style="margin:0">Lo que dice el coach</h2>
-        <button class="bt mini" id="bFb">↻ Pedir análisis</button></div>
-      <div class="peq" id="fbCuado" style="margin-top:6px"></div>
-      <div id="fbTexto" style="margin-top:8px"></div>
     </div>
     <div class="card">
       <h2>Resumen</h2>
@@ -502,7 +503,7 @@
 <script>
 
   // Sube junto con la VERSION del sw.js: sirve para saber que copia corre el telefono.
-  var APP_V = 'v69';
+  var APP_V = 'v70';
 
   /* ============================================================ plan sin coach
      Otra persona puede abrir esta app sin tener a nadie en su casa. En ese caso el plan lo mueve
